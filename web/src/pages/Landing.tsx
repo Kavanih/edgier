@@ -194,39 +194,62 @@ function Stats({ snap }: { snap: Snapshot | null }) {
   );
 }
 
-/** The five steps on a ring. An amber arc sweeps to the active step; the center explains it. */
+/**
+ * The five steps on a ring. Two dashed rings counter-rotate — slowly on their
+ * own, faster with the scroll wheel — while the amber arc stays anchored to the
+ * nodes and sweeps to the active step. The centre explains it.
+ */
 function Orbit({ steps }: { steps: typeof STEPS }) {
-  const ref = useReveal<HTMLDivElement>(0.25);
+  const ref = useReveal<HTMLDivElement>(0.2);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [spin, setSpin] = useState(0);
+
   useEffect(() => {
     if (paused) return;
     const t = setInterval(() => setActive((a) => (a + 1) % steps.length), 2600);
     return () => clearInterval(t);
   }, [paused, steps.length]);
 
-  const R = 41; // percent of the box
+  // Scroll-linked rotation, throttled to a frame.
+  useEffect(() => {
+    let raf = 0;
+    const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setSpin(window.scrollY * 0.06)); };
+    on(); window.addEventListener("scroll", on, { passive: true });
+    return () => { window.removeEventListener("scroll", on); cancelAnimationFrame(raf); };
+  }, []);
+
+  const R = 41;
   const pos = (i: number) => {
     const ang = (-90 + (360 / steps.length) * i) * (Math.PI / 180);
     return { left: `${50 + R * Math.cos(ang)}%`, top: `${50 + R * Math.sin(ang)}%` };
   };
   const progress = ((active + 1) / steps.length) * 100;
   const cur = steps[active];
+  const [swapped, setSwapped] = useState(false);
+  useEffect(() => { if (active !== 0) setSwapped(true); }, [active]);
 
   return (
     <div ref={ref} className="reveal orbit" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
       <svg viewBox="0 0 100 100" className="orbit-svg" aria-hidden="true">
-        <circle cx="50" cy="50" r={R} className="orbit-track" />
-        <circle cx="50" cy="50" r={R} className="orbit-arc" pathLength={100} style={{ strokeDasharray: `${progress} 100` }} />
-        <circle cx="50" cy="50" r={R - 6} className="orbit-inner" />
+        <circle cx="50" cy="50" r={R - 6} className="orbit-fill" />
+        <g className="ring" style={{ transform: `rotate(${spin}deg)` }}>
+          <g className="spin-cw"><circle cx="50" cy="50" r={R} className="orbit-track" /></g>
+        </g>
+        <g className="ring" style={{ transform: `rotate(${-spin}deg)` }}>
+          <g className="spin-ccw"><circle cx="50" cy="50" r={R - 6} className="orbit-inner" /></g>
+        </g>
+        <g className="ring-arc">
+          <circle cx="50" cy="50" r={R} className="orbit-arc" pathLength={100} style={{ strokeDasharray: `${progress} 100` }} />
+        </g>
       </svg>
       {steps.map((st, i) => (
-        <button key={st.n} className={`orbit-node ${i === active ? "active" : ""} ${i < active ? "done" : ""}`} style={pos(i)} onClick={() => setActive(i)}>
+        <button key={st.n} className={`orbit-node ${i === active ? "active" : ""} ${i < active ? "done" : ""}`} style={{ ...pos(i), animationDelay: `${0.35 + i * 0.12}s` }} onClick={() => setActive(i)}>
           <span className="orbit-n">{st.n}</span>
           <span className="orbit-t">{st.title}</span>
         </button>
       ))}
-      <div className="orbit-center" key={active}>
+      <div className={`orbit-center ${swapped ? "swap" : ""}`} key={active}>
         <span className="chip"><code>{cur.tag}</code></span>
         <h3>{cur.title}</h3>
         <p>{cur.body}</p>
