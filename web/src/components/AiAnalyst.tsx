@@ -46,32 +46,32 @@ export function AiAnalyst({
         <span className="ai-title">incident analyst</span>
         {model && <span className="ai-model">{model}</span>}
       </div>
-      <p className="panel-sub">
+      <p className="muted small">
         Feeds the <em>proven</em> transaction — fields and receipt logs — to a model and asks
         which policies it triggers. Advisory only: the contract re-checks every rule against
         the proof, and the model cannot move a single token.
       </p>
       <div className="row">
-        <button className="btn btn-ghost" disabled={!enabled || busy} onClick={run}>
+        <button className="btn btn-outline" disabled={!enabled || busy} onClick={run}>
           {busy ? "reading the proof…" : "analyse this transaction"}
         </button>
-        {!enabled && <span className="dim">sidecar offline</span>}
+        {!enabled && <span className="muted small">sidecar offline</span>}
       </div>
 
-      {err && <div className="alert alert-error">{err}</div>}
+      {err && <div className="note note-bad">{err}</div>}
 
       {out && !out.raw && (
         <div className="ai-out">
           <div className="ai-headline">{out.headline}</div>
           <p className="ai-text">{out.whatHappened}</p>
           {!!out.verdicts?.length && (
-            <table className="tbl tbl-compact">
+            <table className="table table-compact">
               <thead><tr><th>policy</th><th>trigger met</th><th>why</th></tr></thead>
               <tbody>
                 {out.verdicts.map((v) => (
                   <tr key={v.policyId}>
                     <td>#{v.policyId}</td>
-                    <td><span className={v.triggerMet ? "status status-claimed" : "status status-expired"}>{v.triggerMet ? "yes" : "no"}</span></td>
+                    <td><span className={v.triggerMet ? "badge badge-ok" : "badge badge-muted"}>{v.triggerMet ? "yes" : "no"}</span></td>
                     <td>{v.reason}</td>
                   </tr>
                 ))}

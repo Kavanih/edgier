@@ -2,7 +2,7 @@ import { D } from "../lib/chain";
 
 export function HowItWorks() {
   return (
-    <div className="page prose">
+    <div className="prose">
       <h1>how it works</h1>
       <p className="lede">
         Existing on-chain insurers — Nexus Mutual, Sherlock, InsurAce — all share one weakness:
@@ -43,7 +43,7 @@ export function HowItWorks() {
       </ol>
 
       <h2>triggers</h2>
-      <table className="tbl">
+      <table className="table">
         <thead><tr><th>kind</th><th>matches</th><th>real-world risk</th></tr></thead>
         <tbody>
           <tr><td>ADMIN_UPGRADE</td><td>EIP-1967 <code>Upgraded(address)</code>, <code>OwnershipTransferred</code></td><td>rug via proxy upgrade</td></tr>
@@ -51,7 +51,7 @@ export function HowItWorks() {
           <tr><td>LARGE_OUTFLOW</td><td>ERC-20 <code>Transfer</code> from the insured contract ≥ threshold</td><td>treasury drain</td></tr>
         </tbody>
       </table>
-      <p className="dim">
+      <p className="muted">
         The signatures are ecosystem standards, so a policy works against a real protocol
         unmodified. The honest limit: you cannot insure "any exploit" — only precisely defined
         events. That trade is exactly <em>why</em> this is trustless where a DAO vote is not.
@@ -80,7 +80,7 @@ export function HowItWorks() {
       </p>
 
       <h2>this deployment</h2>
-      <table className="tbl">
+      <table className="table">
         <tbody>
           <tr><td>mode</td><td>{D.label}</td></tr>
           <tr><td>chain id</td><td>{D.chainId}</td></tr>

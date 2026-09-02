@@ -45,7 +45,7 @@ export function AiUnderwriter({
         <span className="ai-title">underwriting assistant</span>
         {model && <span className="ai-model">{model}</span>}
       </div>
-      <p className="panel-sub">
+      <p className="muted small">
         Describe the risk in plain English. The model maps it onto a trigger the proof can
         actually establish — and tells you what that trigger will <em>not</em> catch.
       </p>
@@ -56,13 +56,13 @@ export function AiUnderwriter({
         disabled={!enabled}
       />
       <div className="row">
-        <button className="btn btn-ghost" disabled={!enabled || busy || !intent.trim()} onClick={run}>
+        <button className="btn btn-outline" disabled={!enabled || busy || !intent.trim()} onClick={run}>
           {busy ? "thinking…" : "draft policy"}
         </button>
-        {!enabled && <span className="dim">sidecar offline — set OPENROUTER_API_KEY and run <code>npm run ai</code></span>}
+        {!enabled && <span className="muted small">sidecar offline — set OPENROUTER_API_KEY and run <code>npm run ai</code></span>}
       </div>
 
-      {err && <div className="alert alert-error">{err}</div>}
+      {err && <div className="note note-bad">{err}</div>}
 
       {draft && !draft.raw && (
         <div className="ai-out">

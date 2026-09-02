@@ -211,12 +211,23 @@ $ curl -s -X POST https://rpc.cc3-testnet.creditcoin.network \
 {"jsonrpc":"2.0","id":1,"result":"0x18e8f"}     # 102031
 ```
 
-### Not yet verified
+### Verified live: a real mainnet exploit, settled by proof
 
-**A state-changing `submitClaim` on Creditcoin testnet.** This needs funded testnet keys and
-is the one remaining unknown. Everything it depends on — proof structs, precompile ABI,
-decoder ABI, trigger logic, chain id — is confirmed against the live network, so what is
-left is deployment and gas, not encoding. `docs/TESTNET.md` is the runbook.
+The full write path has now run on Creditcoin CC3 Testnet against a **real historical
+Ethereum mainnet incident** — the Ronin Bridge exploit of 23 March 2022.
+
+| | |
+|---|---|
+| insured contract | Ronin Bridge `0x1A2a1c938CE3eC39b6D47113c7955bAa9DD454F2` (mainnet, `chainKey 3`) |
+| trigger | `LARGE_OUTFLOW`, threshold 1,000,000 USDC |
+| the loss | [`0xed2c72…`](https://etherscan.io/tx/0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08) at block 14,442,840 — 25,500,000 USDC out of the bridge |
+| policy | #1, [bought](https://creditcoin-testnet.blockscout.com/tx/0x71de15549b5209e9a8d4fb6aab4a143ddb701481ff881d4107bc2241a3e97679) on the live PolicyManager |
+| settlement | [`0xe719ec…`](https://creditcoin-testnet.blockscout.com/tx/0xe719ecebf947c5a4ad872608980e940cba5f4435d3ebc38c8c6ed4e6757e7093) — `BlockProver.verify()` → true → 10,000 mUSD paid, 571,354 gas |
+
+Nothing in that path is mocked: the proof came from Creditcoin's proof service, the
+verification ran inside the precompile, and the payout is an on-chain transfer. A
+four-year-old hack that predates Creditcoin itself is provable because mainnet's
+attestation genesis is block 0. `npm run settle:mainnet` reproduces it.
 
 ## Known gaps (honest list)
 

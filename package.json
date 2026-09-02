@@ -22,7 +22,8 @@
     "ai": "tsx server/ai.ts",
     "dev": "tsx scripts/dev.ts",
     "use:local": "cp deployments/localhost.json web/src/generated/deployment.json",
-    "use:live": "cp deployments/cc3testnet.json web/src/generated/deployment.json"
+    "use:live": "cp deployments/cc3testnet.json web/src/generated/deployment.json",
+    "settle:mainnet": "hardhat run scripts/settle-mainnet-incident.ts --network cc3testnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

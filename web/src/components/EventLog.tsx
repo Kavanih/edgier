@@ -2,25 +2,24 @@ import type { Snapshot } from "../lib/useProtocol";
 
 export function EventLog({ snap }: { snap: Snapshot }) {
   return (
-    <section className="panel">
-      <div className="panel-head">
-        <h2 className="panel-title">settlement log</h2>
-        <span className="dim">{snap.events.length} events · chain-sourced</span>
-      </div>
-      <p className="panel-sub">
-        <code>ClaimSubmitted</code> is emitted by the ClaimVerifier only after the BlockProver
-        has returned true.
-      </p>
-      {snap.events.length === 0 && <p className="dim">nothing has happened yet</p>}
-      <div className="log">
-        {snap.events.map((e) => (
-          <div className="log-row" key={e.key}>
-            <span className="log-block">{e.block}</span>
-            <span className={`log-name log-${e.name}`}>{e.name}</span>
-            <span className="log-src">{e.source}</span>
-            <span className="log-detail">{e.detail}</span>
-          </div>
-        ))}
+    <section className="card">
+      <div className="card-h"><h2>Settlement log</h2><span className="muted">{snap.events.length} events · chain-sourced</span></div>
+      <p className="muted"><code>ClaimSubmitted</code> is emitted by the ClaimVerifier only after the BlockProver has returned true.</p>
+      {snap.events.length === 0 && <p className="muted">Nothing has happened yet.</p>}
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Block</th><th>Event</th><th>Contract</th><th>Args</th></tr></thead>
+          <tbody>
+            {snap.events.map((e) => (
+              <tr key={e.key}>
+                <td className="mono muted">#{e.block}</td>
+                <td><span className={`ev ev-${e.name}`}>{e.name}</span></td>
+                <td className="muted">{e.source}</td>
+                <td className="mono muted ellipsis">{e.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );

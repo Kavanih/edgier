@@ -1,18 +1,18 @@
 {
   "mode": "live",
-  "label": "Creditcoin CC3 Testnet — real Attestcoin precompiles",
+  "label": "Creditcoin CC3 Testnet \u2014 real Attestcoin precompiles",
   "chainId": 102031,
   "rpcUrl": "https://rpc.cc3-testnet.creditcoin.network",
   "explorer": "https://creditcoin-testnet.blockscout.com",
-  "chainKey": 1,
-  "startAttestedHeight": 11619610,
+  "chainKey": 3,
+  "startAttestedHeight": 14442790,
   "addresses": {
     "MockUSD": "0xF74864Aa06e7888cC65E107eaEB919592d4F5f34",
     "CoverPool": "0xa338Bd92284D3E6BbD2048Db3da47C9b9115475F",
     "PolicyManager": "0xAc4B45EFe11AA77870731c3bA758f4B3967e0198",
     "ClaimVerifier": "0x1F68dFb0c07F3438ABc7Af812d633A6f426B31A3",
     "ChainInfo": "0x0000000000000000000000000000000000000FD3",
-    "InsuredContract": ""
+    "InsuredContract": "0x1A2a1c938CE3eC39b6D47113c7955bAa9DD454F2"
   },
   "abis": {
     "CoverPool": [
