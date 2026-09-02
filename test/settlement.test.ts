@@ -104,12 +104,13 @@ describe("AttestCover settlement", () => {
     f: Awaited<ReturnType<typeof deploy>>,
     kind: TriggerKind,
     threshold = 0n,
+    target = INSURED,
   ) {
     await as(f.pm, f.buyer).buyPolicy(
-      { chainKey: SEPOLIA_CHAINKEY, target: INSURED, kind, threshold },
-      COVER, 100n, 200n,
+      { chainKey: SEPOLIA_CHAINKEY, target, kind, threshold },
+      COVER, 100n, 200n, ethers.MaxUint256,
     );
-    return 1n;
+    return (await f.pm.nextPolicyId()) - 1n;
   }
 
   it("pays out when a proven transaction emitted the insured event", async () => {
@@ -268,5 +269,134 @@ describe("AttestCover settlement", () => {
     expect(await f.pool.lockedCapacity()).to.equal(COVER);
     expect(await f.pool.maxWithdraw(f.underwriter.address))
       .to.be.lte(await f.pool.freeCapacity());
+  });
+  // --- pricing ----------------------------------------------------------
+
+  it("charges more for cover that eats more of the remaining capacity", async () => {
+    const f = await deploy(); // pool holds 50,000
+
+    const small = await f.pm.rateFor(TriggerKind.ADMIN_UPGRADE, ethers.parseEther("1000"));
+    const large = await f.pm.rateFor(TriggerKind.ADMIN_UPGRADE, ethers.parseEther("45000"));
+
+    // 2% utilisation sits on the gentle segment; 90% is past the kink.
+    expect(small).to.equal(505n);  // 500 base + 200 * (0.02 / 0.8)
+    expect(large).to.equal(1700n); // 500 base + 200 + 2000 * (0.10 / 0.20)
+    expect(large).to.be.gt(small);
+  });
+
+  it("prices the last of the capacity at the top of the curve", async () => {
+    const f = await deploy();
+    // Reserving the entire pool puts utilisation at 100%.
+    const full = await f.pm.rateFor(TriggerKind.ADMIN_UPGRADE, ethers.parseEther("50000"));
+    expect(full).to.equal(500n + 200n + 2000n);
+  });
+
+  it("lets a buyer cap the premium they will pay", async () => {
+    const f = await deploy();
+    const trigger = {
+      chainKey: SEPOLIA_CHAINKEY, target: INSURED,
+      kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n,
+    };
+    const premium = await f.pm.quote(TriggerKind.ADMIN_UPGRADE, COVER, 100n);
+
+    await expect(
+      as(f.pm, f.buyer).buyPolicy(trigger, COVER, 100n, 200n, premium - 1n),
+    ).to.be.revertedWithCustomError(f.pm, "PremiumAboveMax");
+
+    await expect(as(f.pm, f.buyer).buyPolicy(trigger, COVER, 100n, 200n, premium))
+      .to.emit(f.pm, "PolicyBought");
+  });
+
+  // --- batched settlement ------------------------------------------------
+
+  it("settles several policies against one shared continuity proof", async () => {
+    const f = await deploy();
+    const OTHER = "0x00000000000000000000000000000000000000A2";
+
+    const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+    const id2 = await buyCover(f, TriggerKind.EMERGENCY_PAUSE, 0n, OTHER);
+
+    const blob1 = encodeBlob({ logs: [upgradedLog()] });
+    const blob2 = encodeBlob({
+      to: OTHER,
+      logs: [{ address_: OTHER, topics: [SIG_PAUSED], data: "0x" }],
+    });
+
+    const before = await f.usd.balanceOf(f.buyer.address);
+
+    await f.verifier.submitClaimBatch(
+      [id1, id2], [150n, 151n], [blob1, blob2],
+      [emptyMerkle, emptyMerkle], emptyContinuity,
+    );
+
+    expect(await f.usd.balanceOf(f.buyer.address)).to.equal(before + COVER * 2n);
+    expect((await f.pm.policies(id1)).status).to.equal(2);
+    expect((await f.pm.policies(id2)).status).to.equal(2);
+  });
+
+  it("rejects a batch whose arrays disagree in length", async () => {
+    const f = await deploy();
+    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+    const blob = encodeBlob({ logs: [upgradedLog()] });
+
+    await expect(
+      f.verifier.submitClaimBatch(
+        [id], [150n, 151n], [blob], [emptyMerkle], emptyContinuity,
+      ),
+    ).to.be.revertedWithCustomError(f.verifier, "LengthMismatch");
+  });
+
+  it("refuses to batch policies written against different source chains", async () => {
+    const f = await deploy();
+    const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+
+    await as(f.pm, f.buyer).buyPolicy(
+      { chainKey: 3, target: INSURED, kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n },
+      COVER, 100n, 200n, ethers.MaxUint256,
+    );
+    const id2 = (await f.pm.nextPolicyId()) - 1n;
+
+    const blob = encodeBlob({ logs: [upgradedLog()] });
+
+    await expect(
+      f.verifier.submitClaimBatch(
+        [id1, id2], [150n, 150n], [blob, blob],
+        [emptyMerkle, emptyMerkle], emptyContinuity,
+      ),
+    ).to.be.revertedWithCustomError(f.verifier, "MixedChainKeys");
+  });
+
+  it("reverts the whole batch when one entry does not meet its trigger", async () => {
+    const f = await deploy();
+    const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+    const id2 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+
+    const good = encodeBlob({ logs: [upgradedLog()] });
+    const bad = encodeBlob({ logs: [] }); // no Upgraded event
+    const before = await f.usd.balanceOf(f.buyer.address);
+
+    await expect(
+      f.verifier.submitClaimBatch(
+        [id1, id2], [150n, 150n], [good, bad],
+        [emptyMerkle, emptyMerkle], emptyContinuity,
+      ),
+    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+
+    // Nothing paid out — the good entry rolled back with the bad one.
+    expect(await f.usd.balanceOf(f.buyer.address)).to.equal(before);
+    expect((await f.pm.policies(id1)).status).to.equal(1); // still ACTIVE
+  });
+
+  it("rejects a batch the precompile will not verify", async () => {
+    const f = await deploy();
+    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+    await f.prover.setResult(false);
+
+    await expect(
+      f.verifier.submitClaimBatch(
+        [id], [150n], [encodeBlob({ logs: [upgradedLog()] })],
+        [emptyMerkle], emptyContinuity,
+      ),
+    ).to.be.revertedWithCustomError(f.verifier, "ProofRejected");
   });
 });

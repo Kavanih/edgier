@@ -20,11 +20,13 @@ const CLAIM_VERIFIER_ABI = [
   "function submitClaim(uint256 policyId, uint64 headerNumber, bytes txBytes, (bytes32 root, (bytes32 hash, bool isLeft)[] siblings) merkleProof, (bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) external",
   "function checkClaim(uint256 policyId, uint64 headerNumber, bytes txBytes, (bytes32 root, (bytes32 hash, bool isLeft)[] siblings) merkleProof, (bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) view returns (bool proofValid, bool triggerMet, bool inWindow)",
   "function claimed(uint256, bytes32) view returns (bool)",
+  // One continuity proof, up to 10 policies. See ClaimVerifier.submitClaimBatch.
+  "function submitClaimBatch(uint256[] policyIds, uint64[] headerNumbers, bytes[] txBytesList, (bytes32 root, (bytes32 hash, bool isLeft)[] siblings)[] merkleProofs, (bytes32 lowerEndpointDigest, bytes32[] roots) sharedContinuityProof) external",
 ];
 
 const POLICY_MANAGER_ABI = [
   "function nextPolicyId() view returns (uint256)",
-  "function policies(uint256) view returns (tuple(address holder, uint256 coverAmount, uint256 premiumPaid, uint256 startBlock, uint256 endBlock, tuple(uint32 chainKey, address target, uint8 kind, uint256 threshold) trigger, uint8 status))",
+  "function policies(uint256) view returns (tuple(address holder, uint256 coverAmount, uint256 premiumPaid, uint256 startBlock, uint256 endBlock, tuple(uint64 chainKey, address target, uint8 kind, uint256 threshold) trigger, uint8 status))",
 ];
 
 async function main() {
