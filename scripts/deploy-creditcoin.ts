@@ -101,6 +101,8 @@ async function main() {
     chainKey,
     // Cover written from here forward can actually be proven.
     startAttestedHeight: Number(latest.height),
+    // Event queries start here — scanning a public RPC from genesis never returns.
+    deployBlock: await ethers.provider.getBlockNumber(),
     addresses: {
       MockUSD: await usd.getAddress(),
       CoverPool: poolAddr,
@@ -116,6 +118,10 @@ async function main() {
 
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, JSON.stringify(deployment, null, 2));
+  // Keep a per-network copy so `npm run use:local` / `use:live` can swap the UI's target.
+  const COPY = resolve(__dirname, "../deployments/cc3testnet.json");
+  mkdirSync(dirname(COPY), { recursive: true });
+  writeFileSync(COPY, JSON.stringify(deployment, null, 2));
 
   console.log("\nMockUSD:       ", deployment.addresses.MockUSD);
   console.log("CoverPool:     ", deployment.addresses.CoverPool);

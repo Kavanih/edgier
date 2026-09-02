@@ -87,10 +87,10 @@ export interface Snapshot {
   events: LogLine[];
 }
 
-const EVENT_SOURCES: { name: string; contract: () => Contract; events: string[] }[] = [
-  { name: "PolicyManager", contract: () => read.pm as Contract, events: ["PolicyBought", "PolicyClaimed", "PolicyExpired"] },
-  { name: "ClaimVerifier", contract: () => read.verifier as Contract, events: ["ClaimSubmitted"] },
-  { name: "CoverPool", contract: () => read.pool as Contract, events: ["CapacityLocked", "CapacityReleased", "PremiumCollected", "ClaimPaid"] },
+const EVENT_SOURCES: { name: string; contract: () => Contract; events: Set<string> }[] = [
+  { name: "PolicyManager", contract: () => read.pm as Contract, events: new Set(["PolicyBought", "PolicyClaimed", "PolicyExpired"]) },
+  { name: "ClaimVerifier", contract: () => read.verifier as Contract, events: new Set(["ClaimSubmitted"]) },
+  { name: "CoverPool", contract: () => read.pool as Contract, events: new Set(["CapacityLocked", "CapacityReleased", "PremiumCollected", "ClaimPaid"]) },
 ];
 
 function describe(name: string, args: readonly unknown[]): string {
@@ -100,27 +100,32 @@ function describe(name: string, args: readonly unknown[]): string {
     .slice(0, 160) || name;
 }
 
+/**
+ * One `eth_getLogs` per contract, from the deploy block. Scanning from genesis
+ * is fine on a local node and never returns on a public RPC for a chain with
+ * millions of blocks — which is how the live UI sat on "connecting" forever.
+ */
 async function loadEvents(): Promise<LogLine[]> {
+  const from = (D as { deployBlock?: number }).deployBlock ?? 0;
   const out: LogLine[] = [];
   for (const src of EVENT_SOURCES) {
     const c = src.contract();
-    for (const ev of src.events) {
-      let logs;
-      try {
-        logs = await c.queryFilter(ev, 0, "latest");
-      } catch {
-        continue;
-      }
-      for (const l of logs) {
-        const args = "args" in l ? (l.args as unknown as readonly unknown[]) : [];
-        out.push({
-          key: `${l.transactionHash}-${l.index}`,
-          block: l.blockNumber,
-          source: src.name,
-          name: ev,
-          detail: describe(ev, args),
-        });
-      }
+    let logs;
+    try {
+      logs = await c.queryFilter("*", from, "latest");
+    } catch {
+      continue;
+    }
+    for (const l of logs) {
+      if (!("eventName" in l) || !src.events.has(l.eventName)) continue;
+      const args = l.args as unknown as readonly unknown[];
+      out.push({
+        key: `${l.transactionHash}-${l.index}`,
+        block: l.blockNumber,
+        source: src.name,
+        name: l.eventName,
+        detail: describe(l.eventName, args),
+      });
     }
   }
   return out.sort((a, b) => b.block - a.block);
@@ -175,7 +180,7 @@ async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
     roles,
     you: actor ? await holdingOf(actor.address) : null,
     attestedHeight: attested.height,
-    events: await loadEvents(),
+    events: [],
   };
 }
 
@@ -202,8 +207,13 @@ export function useProtocol() {
 
   const refresh = useCallback(async () => {
     try {
-      setSnap(await loadSnapshot(actor));
+      // Two phases: the pool and policies render immediately; the event log
+      // fills in when the (slower) log query lands, keeping the last one until then.
+      const core = await loadSnapshot(actor);
+      setSnap((prev) => ({ ...core, events: prev?.events ?? [] }));
       setConnError(null);
+      const events = await loadEvents();
+      setSnap((prev) => (prev ? { ...prev, events } : prev));
     } catch (e) {
       setConnError(
         `Cannot reach ${D.rpcUrl}. Is the local node running? ` +

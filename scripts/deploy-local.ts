@@ -97,6 +97,7 @@ async function main() {
     /** Attestcoin source-chain id the policies are written against. */
     chainKey: 1,
     startAttestedHeight: START_ATTESTED,
+    deployBlock: 0,
     addresses: {
       MockUSD: await usd.getAddress(),
       CoverPool: poolAddr,
@@ -112,6 +113,10 @@ async function main() {
 
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, JSON.stringify(deployment, null, 2));
+  // Keep a per-network copy so `npm run use:local` / `use:live` can swap the UI's target.
+  const COPY = resolve(__dirname, "../deployments/localhost.json");
+  mkdirSync(dirname(COPY), { recursive: true });
+  writeFileSync(COPY, JSON.stringify(deployment, null, 2));
 
   console.log("\nCoverPool:     ", deployment.addresses.CoverPool);
   console.log("PolicyManager: ", deployment.addresses.PolicyManager);

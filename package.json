@@ -20,7 +20,9 @@
     "seed:local": "hardhat run scripts/seed-demo.ts --network localhost",
     "demo:local": "npm run deploy:local && npm run seed:local",
     "ai": "tsx server/ai.ts",
-    "dev": "tsx scripts/dev.ts"
+    "dev": "tsx scripts/dev.ts",
+    "use:local": "cp deployments/localhost.json web/src/generated/deployment.json",
+    "use:live": "cp deployments/cc3testnet.json web/src/generated/deployment.json"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
