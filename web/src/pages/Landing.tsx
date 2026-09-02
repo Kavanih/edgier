@@ -17,8 +17,8 @@ const TERMINAL = [
 ];
 
 const STEPS = [
-  { n: "01", title: "Buy cover", tag: "PolicyManager.buyPolicy", body: "Name a contract on Ethereum and the event that counts as a loss — an admin upgrade, an emergency pause, a treasury drain. The premium is priced by how much of the pool you reserve." },
-  { n: "02", title: "The loss lands on Ethereum", tag: "event log", body: "Your vault emits Upgraded(address), Paused(address), or a large ERC-20 Transfer out. It is in a block. It is history." },
+  { n: "01", title: "Buy cover", tag: "PolicyManager.buyPolicy", body: "Name an EVM contract and the event that counts as a loss — an admin upgrade, an emergency pause, a treasury drain. The premium is priced by how much of the pool you reserve." },
+  { n: "02", title: "The loss lands on-chain", tag: "event log", body: "Your vault emits Upgraded(address), Paused(address), or a large ERC-20 Transfer out. It is in a block. It is history." },
   { n: "03", title: "Creditcoin attests the block", tag: "ChainInfo precompile", body: "Periodically, not instantly — the honest cost of not trusting an oracle. From then on the transaction can be proven." },
   { n: "04", title: "Anyone fetches a proof", tag: "@gluwa/usc-sdk", body: "The watcher, you, or a stranger. It cannot forge a payout and it cannot withhold one. It is a convenience, not an authority." },
   { n: "05", title: "The precompile decides", tag: "ClaimVerifier.submitClaim", body: "BlockProver.verify() returns true or the claim reverts. The receipt is decoded, receiptStatus checked, the trigger matched, the pool pays." },
@@ -45,9 +45,10 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
         <span className="eyebrow rise d0"><Icon name="spark" size={12} /> Built on Creditcoin · Attestcoin Protocol · BUIDL CTC 2026</span>
         <h1 className="rise d1">The claim is a <em>proof</em>.<br />Not a vote.</h1>
         <p className="rise d2">
-          On-chain insurance for DeFi protocols. When your contract is rugged, drained or frozen,
+          On-chain insurance for EVM protocols. When your contract is rugged, drained or frozen,
           Edgier pays the moment a cryptographic proof of the loss lands on Creditcoin —
-          no committee, no claims assessor, no one who can say no.
+          no committee, no claims assessor, no one who can say no. Ethereum today; any chain
+          Creditcoin attests next.
         </p>
         <div className="l-cta rise d3">
           <a className="btn btn-primary btn-lg" href={app("cover")}>Get cover <Icon name="arrow" size={15} /></a>
@@ -113,7 +114,7 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
             <span className="badge badge-ok"><Icon name="check" size={12} /> settled on Creditcoin testnet</span>
             <span className="muted">{ronin.date} · mainnet block {ronin.block.toLocaleString()}</span>
           </div>
-          <h2>We insured the {ronin.name} — and paid the claim with a proof of the actual hack.</h2>
+          <h2>We insured the Ronin, Euler, Harmony, Nomad and Poly Network contracts — and paid each claim with a proof of the actual hack.</h2>
           <p className="muted">{ronin.summary} Ethereum mainnet's attestation genesis on Creditcoin is block 0, so a hack that predates Creditcoin itself is provable today.</p>
           <Terminal />
           <div className="l-proof-links">
@@ -127,8 +128,8 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       <section className="l-features">
         <Reveal><h2 className="l-h2">Built for the thing that goes wrong</h2></Reveal>
         <div className="feat-grid">
-          <Feature i={0} icon="shield" title="Parametric, not political" body="Three precisely-defined loss events, matched on the event logs of a proven transaction. If it happened, you are paid. Nothing to argue." />
-          <Feature i={1} icon="link" title="Settled by Attestcoin" body="A Creditcoin proof carries the transaction and its receipt — so we know it succeeded, and exactly which events it emitted." />
+          <Feature i={0} icon="shield" title="Parametric, not political" body="Three precisely-defined loss events — EVM standards: EIP-1967, OpenZeppelin Pausable, ERC-20 — matched on the event logs of a proven transaction. If it happened, you are paid. Nothing to argue." />
+          <Feature i={1} icon="link" title="Settled by Attestcoin" body="A Creditcoin proof carries the transaction and its receipt — so we know it succeeded, and exactly which events it emitted. Works for any EVM chain Creditcoin attests; Ethereum mainnet and Sepolia today." />
           <Feature i={2} icon="globe" title="Anyone can settle" body="submitClaim is permissionless. A stranger with no policy can force a correct payout, because the proof — not the caller — is what the contract trusts." />
           <Feature i={3} icon="vault" title="Priced by scarcity" body="A kinked utilisation curve. Taking the last of the pool costs what it is worth; underwriters earn most when capital is scarcest." />
           <Feature i={4} icon="bolt" title="One proof, ten policies" body="An incident that hits several protocols settles in a batch against a single continuity proof — the shape the precompile was built for." />

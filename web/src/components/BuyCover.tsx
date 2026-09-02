@@ -95,7 +95,7 @@ export function BuyCover({
 
         <div className="form form-2">
           <label className="field span-2">
-            <span>Insured contract · Ethereum</span>
+            <span>Insured contract · EVM</span>
             <input value={target} onChange={(e) => setTarget(e.target.value)} spellCheck={false} placeholder="0x…" />
           </label>
           <label className="field">

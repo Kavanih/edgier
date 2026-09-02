@@ -12,7 +12,7 @@ export function HowItWorks() {
       </p>
 
       <h2>the architecture</h2>
-      <pre className="diagram">{`  ETHEREUM  (risk lives here)              CREDITCOIN  (capital + settlement)
+      <pre className="diagram">{`  EVM CHAIN (risk lives here)              CREDITCOIN  (capital + settlement)
   ─────────────────────────────            ───────────────────────────────────
   insured contract                          CoverPool       ERC-4626 capital
     ├ Upgraded(address)        ──┐          PolicyManager   writes cover, prices it

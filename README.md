@@ -2,7 +2,7 @@
 
 **On-chain insurance where the claim is a proof, not a vote.**
 
-The edge is the proof. Zero votes between you and your payout. Cover for DeFi protocols on Ethereum, underwritten on Creditcoin, settled by an Attestcoin inclusion proof — no committee, no claims assessor, no one who can say no.
+The edge is the proof. Zero votes between you and your payout. Cover for EVM protocols — proven on Ronin, Euler, Harmony, Nomad and Poly Network — underwritten on Creditcoin, settled by an Attestcoin inclusion proof. No committee, no claims assessor, no one who can say no. Ethereum today; any chain Creditcoin attests next.
 
 Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail) — DeFi track.
 

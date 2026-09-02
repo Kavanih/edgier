@@ -9,7 +9,7 @@ export type Page = "dashboard" | "cover" | "underwrite" | "claims" | "activity" 
 
 export const PAGES: { key: Page; label: string; icon: "dashboard" | "shield" | "vault" | "claims" | "activity" | "book"; blurb: string }[] = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard", blurb: "Pool health, pricing curve, recent settlements" },
-  { key: "cover", label: "Buy cover", icon: "shield", blurb: "Insure a contract on Ethereum" },
+  { key: "cover", label: "Buy cover", icon: "shield", blurb: "Insure an EVM contract" },
   { key: "underwrite", label: "Underwrite", icon: "vault", blurb: "Supply the capital that backs cover" },
   { key: "claims", label: "Claims", icon: "claims", blurb: "Settle by proof — anyone can" },
   { key: "activity", label: "Activity", icon: "activity", blurb: "Every state change, straight from chain events" },
