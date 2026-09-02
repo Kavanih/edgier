@@ -59,7 +59,7 @@ export default function App() {
       )}
 
       <footer className="foot">
-        <span>pool, policies and settlement on creditcoin · risk on ethereum · claims settled by an attestcoin inclusion proof, never by a vote</span>
+        <span>zero votes between you and your payout · capital on creditcoin · risk on ethereum · settled by an attestcoin inclusion proof</span>
         <span className="dim">PolicyManager {D.addresses.PolicyManager} · ClaimVerifier {D.addresses.ClaimVerifier}</span>
       </footer>
     </div>

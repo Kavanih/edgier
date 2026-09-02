@@ -1,4 +1,4 @@
-# AI in AttestCover
+# AI in Nullvote
 
 ## The rule
 

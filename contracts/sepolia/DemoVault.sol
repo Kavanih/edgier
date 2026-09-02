@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
 ///
 /// @dev It emits the ECOSYSTEM-STANDARD event signatures — EIP-1967 `Upgraded`,
 ///      OpenZeppelin `Paused`, ERC-20 `Transfer` — rather than bespoke ones.
-///      That matters: it means the policies AttestCover writes are not special
+///      That matters: it means the policies Nullvote writes are not special
 ///      cased to this contract. The same trigger works against a real protocol.
 ///
 ///      Per the Creditcoin docs, source-chain logic stays thin; all the business
@@ -49,7 +49,7 @@ contract DemoVault {
         emit Transfer(address(0), msg.sender, msg.value);
     }
 
-    // --- the three loss events AttestCover writes policies against ---------
+    // --- the three loss events Nullvote writes policies against ---------
 
     /// @dev TriggerLib.Kind.ADMIN_UPGRADE
     function upgradeTo(address newImplementation) external onlyOwner {
