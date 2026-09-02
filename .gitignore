@@ -1,0 +1,13 @@
+node_modules/
+.env
+artifacts/
+cache/
+typechain-types/
+*.log
+
+# Local demo deployment is regenerated on every `npm run localnet`.
+deployments/localhost.json
+
+# Frontend
+web/node_modules/
+web/dist/

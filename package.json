@@ -1,0 +1,30 @@
+{
+  "name": "attestcover",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Parametric on-chain cover settled by Attestcoin Protocol proofs of Ethereum transactions.",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:sepolia": "hardhat run scripts/deploy-sepolia.ts --network sepolia",
+    "deploy:creditcoin": "hardhat run scripts/deploy-creditcoin.ts --network cc3testnet",
+    "watch": "tsx watcher/src/index.ts",
+    "preflight": "tsx scripts/check-attestation.ts",
+    "verify:live": "tsx scripts/verify-live.ts",
+    "verify:trigger": "hardhat run scripts/verify-trigger-live.ts",
+    "trigger:demo": "hardhat run scripts/fire-exploit.ts --network sepolia"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.14.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.10",
+    "tsx": "^4.16.5",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@gluwa/usc-sdk": "^0.18.0",
+    "@openzeppelin/contracts": "^5.0.2",
+    "ethers": "^6.13.2"
+  }
+}
