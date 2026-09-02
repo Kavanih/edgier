@@ -229,6 +229,22 @@ verification ran inside the precompile, and the payout is an on-chain transfer. 
 four-year-old hack that predates Creditcoin itself is provable because mainnet's
 attestation genesis is block 0. `npm run settle:mainnet` reproduces it.
 
+Four more real incidents settled the same way, each a policy on the exploited contract
+and a proof of the actual exploit transaction:
+
+| Incident | Exploit tx | Policy | Settlement on Creditcoin |
+|---|---|---|---|
+| Euler Finance, 2023 — 38.9M DAI | [`0xc310a0…`](https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d) | #2 | [`0xb48b92…`](https://creditcoin-testnet.blockscout.com/tx/0xb48b92f7d02a4a700686f24099d119f9f5c076b7f94dce9cde29a86627ba7b8f) |
+| Harmony Horizon Bridge, 2022 — 6.07M DAI | [`0xb51368…`](https://etherscan.io/tx/0xb51368d8c2b857c5f7de44c57ff32077881df9ecb60f0450ee1226e1a7b8a0dd) | #3 | [`0x406449…`](https://creditcoin-testnet.blockscout.com/tx/0x406449980de0206d55da84062f307d32e2e09a91b7fc2e7f6b88d41824a47382) |
+| Nomad Bridge, 2022 — 10,000 WETH | [`0x56b455…`](https://etherscan.io/tx/0x56b4551dd7e8f475a2c70c7a7e53a5e9a1d5e09f33dac0d89b7816748a8caaf6) | #5 | [`0x43d028…`](https://creditcoin-testnet.blockscout.com/tx/0x43d0281bc160e8dfc3e21327d0d9a4f00e385af1575222c5226998fef6289f67) |
+| Poly Network, 2021 — 259.7B SHIB | [`0xe05dcd…`](https://etherscan.io/tx/0xe05dcda4f1b779989b0aa2bd3fa262d4e6e13343831cb337c2c5beb2266138f5) | #6 | [`0xdcbd7b…`](https://creditcoin-testnet.blockscout.com/tx/0xdcbd7b2693e9ef1539a450de5dd3339b02a4a64b8ec0269764ead326ded3923e) |
+
+Policy #4 is the honest one: it was written on Poly Network with a threshold above what
+the transaction moved, the precompile said the proof was valid, `TriggerLib` said the
+trigger was not met, and nothing was paid. It was then
+[expired](https://creditcoin-testnet.blockscout.com/tx/0x8a583e89a6d82675a26d2e4bdb129efb69d913e1cf8a964a1e486ee7d650ad8e)
+against the attested mainnet height, releasing its capital — `expire()` proven live too.
+
 ## Known gaps (honest list)
 
 1. **`LARGE_OUTFLOW` only sees ERC-20 `Transfer` logs.** Native ETH movements emit no log and

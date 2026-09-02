@@ -3,110 +3,96 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { proofProvider } from "@gluwa/usc-sdk";
 import * as dotenv from "dotenv";
+import { INCIDENTS, type Incident } from "./incidents";
 dotenv.config();
 
 /**
- * Plan B, end to end, on the LIVE network:
+ * Plan B, end to end, on the LIVE network, for every incident in scripts/incidents.ts:
  *
- *   1. write a policy against a real Ethereum MAINNET contract,
+ *   1. write a policy against the real Ethereum MAINNET contract,
  *   2. fetch an Attestcoin proof of the real historical exploit transaction,
  *   3. settle the policy on Creditcoin against that proof.
  *
- * Nothing here is mocked. The proof comes from Creditcoin's proof service, the
- * verification happens inside the BlockProver precompile, and the payout is a
- * real transfer on CC3 Testnet. Ethereum mainnet is chainKey 3 as seen from
- * testnet, with attestation genesis at block 0 — so the entire history of the
- * chain is provable, including incidents that predate Creditcoin itself.
+ * Nothing is mocked. Mainnet is chainKey 3 from testnet with attestation genesis
+ * at block 0, so incidents that predate Creditcoin itself are provable.
+ * Incidents already settled (an active-or-claimed policy exists for them) are skipped.
  *
  *   npx hardhat run scripts/settle-mainnet-incident.ts --network cc3testnet
  */
 
-/** Ronin Bridge, 23 March 2022. The attacker's USDC withdrawal. */
-export const INCIDENT = {
-  name: "Ronin Bridge exploit",
-  date: "2022-03-23",
-  chainKey: 3,
-  txHash: "0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08",
-  block: 14_442_840,
-  /** The insured contract: the bridge the funds left. */
-  target: "0x1A2a1c938CE3eC39b6D47113c7955bAa9DD454F2",
-  kind: 2, // LARGE_OUTFLOW
-  /** 1,000,000 USDC (6 decimals). The exploit moved 25,500,000. */
-  threshold: 1_000_000n * 10n ** 6n,
-  explorer: "https://etherscan.io/tx/0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08",
-};
-
 const COVER = ethers.parseEther("10000");
 const EXPLORER = "https://creditcoin-testnet.blockscout.com";
+const STATUS = ["NONE", "ACTIVE", "CLAIMED", "EXPIRED"];
 
 async function main() {
   const d = JSON.parse(readFileSync(resolve(__dirname, "../deployments/cc3testnet.json"), "utf8"));
   const [signer] = await ethers.getSigners();
-  console.log(`signer ${signer.address}\n`);
+  console.log(`signer ${signer.address}`);
 
   const pm = await ethers.getContractAt("PolicyManager", d.addresses.PolicyManager, signer);
   const verifier = await ethers.getContractAt("ClaimVerifier", d.addresses.ClaimVerifier, signer);
   const usd = await ethers.getContractAt("MockUSD", d.addresses.MockUSD, signer);
+  const builder = new proofProvider.service.ProofBuilder(3, process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network", 60_000);
 
-  // --- 1. policy against the real contract, window around the real block ----
-  const start = BigInt(INCIDENT.block - 50), end = BigInt(INCIDENT.block + 50);
-  let policyId = 0n;
-  const next = await pm.nextPolicyId();
+  if ((await usd.allowance(signer.address, d.addresses.CoverPool)) < COVER * BigInt(INCIDENTS.length)) {
+    await (await usd.approve(d.addresses.CoverPool, ethers.MaxUint256)).wait();
+  }
+
+  const results: { name: string; policyId: bigint; status: string; tx?: string }[] = [];
+  for (const inc of INCIDENTS) {
+    try { results.push(await settle(inc, { pm, verifier, usd, builder })); }
+    catch (e) { console.log(`   ✖ ${inc.name}: ${(e as Error).message.slice(0, 160)}`); }
+  }
+
+  console.log("\n=== summary ===");
+  for (const r of results) console.log(`${r.name.padEnd(24)} policy #${r.policyId}  ${r.status}${r.tx ? `  ${EXPLORER}/tx/${r.tx}` : ""}`);
+}
+
+async function settle(inc: Incident, c: { pm: any; verifier: any; usd: any; builder: any }) {
+  console.log(`\n### ${inc.name} (${inc.date}) — ${inc.txHash.slice(0, 18)}… block ${inc.block}`);
+  const start = BigInt(inc.block - 50), end = BigInt(inc.block + 50);
+
+  // --- 1. policy: reuse one that covers this incident, else buy ---
+  let policyId = 0n, existing: bigint | null = null;
+  const next = await c.pm.nextPolicyId();
   for (let i = 1n; i < next; i++) {
-    const p = await pm.policies(i);
-    if (p.status === 1n && p.trigger.target.toLowerCase() === INCIDENT.target.toLowerCase() &&
-        p.trigger.chainKey === BigInt(INCIDENT.chainKey) && p.startBlock <= BigInt(INCIDENT.block) && p.endBlock >= BigInt(INCIDENT.block)) {
-      policyId = i; break;
+    const p = await c.pm.policies(i);
+    if (p.trigger.target.toLowerCase() === inc.target.toLowerCase() && p.trigger.chainKey === BigInt(inc.chainKey) &&
+        p.trigger.threshold === inc.threshold &&
+        p.startBlock <= BigInt(inc.block) && p.endBlock >= BigInt(inc.block)) {
+      if (p.status === 2n) { console.log(`   already settled as policy #${i} — skipping`); return { name: inc.name, policyId: i, status: "CLAIMED (earlier)" }; }
+      if (p.status === 1n) { existing = i; break; }
     }
   }
-  if (policyId === 0n) {
-    if ((await usd.allowance(signer.address, d.addresses.CoverPool)) < COVER) {
-      await (await usd.approve(d.addresses.CoverPool, ethers.MaxUint256)).wait();
-    }
-    const premium = await pm.quote(INCIDENT.kind, COVER, end - start);
-    console.log(`[1] buying ${ethers.formatEther(COVER)} mUSD of LARGE_OUTFLOW cover on ${INCIDENT.name}`);
-    console.log(`    target ${INCIDENT.target} · mainnet blocks ${start}–${end} · premium ${ethers.formatEther(premium)} mUSD`);
-    const tx = await pm.buyPolicy(
-      { chainKey: INCIDENT.chainKey, target: INCIDENT.target, kind: INCIDENT.kind, threshold: INCIDENT.threshold },
-      COVER, start, end, (premium * 101n) / 100n,
-    );
-    const rx = await tx.wait();
-    policyId = (await pm.nextPolicyId()) - 1n;
-    console.log(`    policy #${policyId} · ${EXPLORER}/tx/${rx!.hash}`);
-  } else {
-    console.log(`[1] reusing active policy #${policyId} on ${INCIDENT.name}`);
+  if (existing !== null) { policyId = existing; console.log(`[1] reusing active policy #${policyId}`); }
+  else {
+    const premium = await c.pm.quote(inc.kind, COVER, end - start);
+    console.log(`[1] buying ${ethers.formatEther(COVER)} mUSD LARGE_OUTFLOW cover · threshold ${ethers.formatUnits(inc.threshold, inc.decimals)} ${inc.token} · premium ${ethers.formatEther(premium)} mUSD`);
+    const tx = await c.pm.buyPolicy({ chainKey: inc.chainKey, target: inc.target, kind: inc.kind, threshold: inc.threshold }, COVER, start, end, (premium * 101n) / 100n);
+    await tx.wait();
+    policyId = (await c.pm.nextPolicyId()) - 1n;
+    console.log(`    policy #${policyId}`);
   }
 
-  // --- 2. the proof ----------------------------------------------------------
-  console.log(`\n[2] fetching Attestcoin proof for ${INCIDENT.txHash.slice(0, 18)}… (mainnet block ${INCIDENT.block})`);
-  const builder = new proofProvider.service.ProofBuilder(
-    INCIDENT.chainKey, process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network", 60_000,
-  );
-  const res = await builder.getProof(INCIDENT.txHash);
+  // --- 2. proof ---
+  const res = await c.builder.getProof(inc.txHash);
   if (!res.success || !res.data) throw new Error(`proof failed: ${res.error}`);
   const pf = res.data;
-  console.log(`    headerNumber ${pf.headerNumber} · txIndex ${pf.txIndex} · merkle siblings ${pf.merkleProof.siblings.length} · continuity roots ${pf.continuityProof.roots.length}`);
+  console.log(`[2] proof: headerNumber ${pf.headerNumber} · siblings ${pf.merkleProof.siblings.length} · continuity roots ${pf.continuityProof.roots.length}`);
 
-  // --- 3. dry run, then settle ---------------------------------------------
-  const [proofValid, triggerMet, inWindow] = await verifier.checkClaim(
-    policyId, pf.headerNumber, pf.txBytes, pf.merkleProof, pf.continuityProof,
-  );
-  console.log(`\n[3] checkClaim → proofValid=${proofValid} triggerMet=${triggerMet} inWindow=${inWindow}`);
+  // --- 3. dry run, settle ---
+  const [proofValid, triggerMet, inWindow] = await c.verifier.checkClaim(policyId, pf.headerNumber, pf.txBytes, pf.merkleProof, pf.continuityProof);
+  console.log(`[3] checkClaim → proofValid=${proofValid} triggerMet=${triggerMet} inWindow=${inWindow}`);
   if (!proofValid || !triggerMet || !inWindow) throw new Error("claim would not settle");
 
-  const holder = (await pm.policies(policyId)).holder;
-  const before = await usd.balanceOf(holder);
-  console.log(`    submitting claim on policy #${policyId} …`);
-  const tx = await verifier.submitClaim(policyId, pf.headerNumber, pf.txBytes, pf.merkleProof, pf.continuityProof);
+  const holder = (await c.pm.policies(policyId)).holder;
+  const before = await c.usd.balanceOf(holder);
+  const tx = await c.verifier.submitClaim(policyId, pf.headerNumber, pf.txBytes, pf.merkleProof, pf.continuityProof);
   const rx = await tx.wait();
-  const after = await usd.balanceOf(holder);
-
-  console.log(`\n✅ SETTLED BY PROOF`);
-  console.log(`   payout   ${ethers.formatEther(after - before)} mUSD to ${holder}`);
-  console.log(`   gas used ${rx!.gasUsed}`);
-  console.log(`   status   ${["NONE", "ACTIVE", "CLAIMED", "EXPIRED"][Number((await pm.policies(policyId)).status)]}`);
-  console.log(`   creditcoin tx ${EXPLORER}/tx/${rx!.hash}`);
-  console.log(`   proved     ${INCIDENT.explorer}`);
+  const after = await c.usd.balanceOf(holder);
+  const status = STATUS[Number((await c.pm.policies(policyId)).status)];
+  console.log(`✅ ${inc.name}: paid ${ethers.formatEther(after - before)} mUSD · gas ${rx.gasUsed} · ${status} · ${EXPLORER}/tx/${rx.hash}`);
+  return { name: inc.name, policyId, status, tx: rx.hash as string };
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

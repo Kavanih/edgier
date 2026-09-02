@@ -59,9 +59,11 @@ export function BuyCover({
     if (d.windowBlocks) setEndStr((start + BigInt(Math.max(1, Math.floor(d.windowBlocks)))).toString());
   }
 
+  const [preset, setPreset] = useState<(typeof INCIDENTS)[number] | null>(null);
   function applyIncident(i: (typeof INCIDENTS)[number]) {
+    setPreset(i);
     setTarget(i.target); setChainKey(i.chainKey); setKind(i.kind);
-    setThresholdStr((Number(i.threshold) / 1e6).toString());
+    setThresholdStr((Number(i.threshold) / 10 ** i.decimals).toString());
     setStartStr(String(i.block - 50)); setEndStr(String(i.block + 50));
   }
 
@@ -71,10 +73,9 @@ export function BuyCover({
     const maxPremium = (premium * 101n) / 100n;
     const allowance: bigint = await c.usd.allowance(me, D.addresses.CoverPool);
     if (allowance < maxPremium) await (await c.usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n)).wait();
-    // LARGE_OUTFLOW thresholds are in the token's own units; the presets are USDC (6dp).
-    const threshold = kind === Kind.LARGE_OUTFLOW
-      ? (chainKey === 3 ? BigInt(Math.round(Number(thresholdStr || "0") * 1e6)) : safeParse(thresholdStr))
-      : 0n;
+    // LARGE_OUTFLOW thresholds are in the token's own units; a preset carries its decimals.
+    const dec = preset && preset.target.toLowerCase() === target.toLowerCase() ? preset.decimals : 18;
+    const threshold = kind === Kind.LARGE_OUTFLOW ? BigInt(Math.round(Number(thresholdStr || "0") * 10 ** dec)) : 0n;
     return c.pm.buyPolicy({ chainKey, target, kind, threshold }, cover, start, end, maxPremium);
   }
 
@@ -86,8 +87,8 @@ export function BuyCover({
         <div className="presets">
           <span className="muted">real mainnet incidents:</span>
           {INCIDENTS.map((i) => (
-            <button key={i.txHash} className="chip chip-btn" onClick={() => applyIncident(i)} title={i.summary}>
-              <Icon name="bolt" size={12} /> {i.name} · {i.date}
+            <button key={i.txHash} className={`chip chip-btn ${preset?.txHash === i.txHash ? "on" : ""}`} onClick={() => applyIncident(i)} title={i.summary}>
+              <Icon name="bolt" size={12} /> {i.name} · {i.date.slice(0, 4)}
             </button>
           ))}
         </div>
@@ -116,7 +117,7 @@ export function BuyCover({
           </label>
           {kind === Kind.LARGE_OUTFLOW ? (
             <label className="field">
-              <span>Outflow threshold {chainKey === 3 ? "· USDC" : "· tokens"}</span>
+              <span>Outflow threshold · {preset && preset.target.toLowerCase() === target.toLowerCase() ? preset.token : "tokens (18dp)"}</span>
               <input value={thresholdStr} onChange={(e) => setThresholdStr(e.target.value)} />
             </label>
           ) : <div />}

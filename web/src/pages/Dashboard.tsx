@@ -1,7 +1,7 @@
 import { CapacityBar, RateCurve } from "../components/Charts";
 import { Icon } from "../components/Icons";
 import { amount, pctOfWad, short } from "../lib/format";
-import { INCIDENTS, blockscoutTx, etherscanTx } from "../lib/incidents";
+import { INCIDENTS, blockscoutTx, etherscanTx, fmtThreshold } from "../lib/incidents";
 import { app } from "../lib/router";
 import { kindLabel } from "../lib/triggers";
 import type { Snapshot } from "../lib/useProtocol";
@@ -43,13 +43,13 @@ export function Dashboard({ snap }: { snap: Snapshot }) {
 
       <section className="card card-accent">
         <div className="card-h">
-          <h2><Icon name="check" size={16} /> Verified incident</h2>
-          <span className="badge badge-ok">settled by proof</span>
+          <h2><Icon name="check" size={16} /> Verified incidents</h2>
+          <span className="badge badge-ok">{INCIDENTS.filter((i) => i.settledTx).length} settled by proof</span>
         </div>
         {INCIDENTS.map((i) => (
           <div className="incident" key={i.txHash}>
             <div className="incident-main">
-              <b>{i.name}</b> <span className="muted">· {i.date} · mainnet block {i.block.toLocaleString()}</span>
+              <b>{i.name}</b> <span className="muted">· {i.date} · mainnet block {i.block.toLocaleString()} · ≥ {fmtThreshold(i)}</span>
               <p className="muted">{i.summary}</p>
             </div>
             <div className="incident-links">

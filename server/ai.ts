@@ -29,15 +29,27 @@ const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PROOF_BUILDER_URL = process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network";
 
-/** Tried in order. Anything free that is not listed here is a fallback. */
+/**
+ * Tried in order — fastest reliable responders first, from a latency benchmark
+ * (2026-09-02: dots ~1.1s, nemotron-super ~0.9s, laguna-s ~1.8s; gemma and
+ * glm were 429-limited). Anything free not listed here is a fallback.
+ */
 const PREFERRED = [
-  "google/gemma-4-31b-it:free",
+  "dots-studio/dots-3-note-preview:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
-  "z-ai/glm-5.2:free",
+  "poolside/laguna-s-2.1:free",
   "minimax/minimax-m2.7:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "google/gemma-4-31b-it:free",
+  "z-ai/glm-5.2:free",
+  "minimax/minimax-m3:free",
 ];
+/** Free, but not chat models — or ones that returned empty replies under test. */
+const EXCLUDE = new Set([
+  "nvidia/nemotron-3.5-content-safety:free",
+  "thinkingmachines/inkling-small:free",
+  "thinkingmachines/inkling:free",
+  "liquid/lfm-2.5-2.6b:free",
+]);
 
 // --- free-model discovery -------------------------------------------------
 
@@ -58,7 +70,7 @@ async function freeModels(): Promise<string[]> {
     String(m.pricing?.prompt) === "0" &&
     String(m.pricing?.completion) === "0";
 
-  const free = data.filter(isFree);
+  const free = data.filter((m) => isFree(m) && !EXCLUDE.has(m.id));
   const rank = (id: string) => {
     const i = PREFERRED.indexOf(id);
     return i === -1 ? PREFERRED.length : i;
@@ -81,7 +93,7 @@ function tick() {
 
 // --- completion with model rotation ---------------------------------------
 
-async function complete(system: string, user: string): Promise<{ text: string; model: string }> {
+async function complete(system: string, user: string, maxTokens = 1000): Promise<{ text: string; model: string }> {
   if (!KEY) throw new Error("OPENROUTER_API_KEY is not set — add it to .env");
   tick();
   if (usage.calls >= DAILY_CAP) throw new Error(`daily cap of ${DAILY_CAP} calls reached; resets at 00:00 UTC`);
@@ -105,7 +117,7 @@ async function complete(system: string, user: string): Promise<{ text: string; m
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        max_tokens: 1000,
+        max_tokens: maxTokens,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -244,7 +256,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/ai/ask") {
       const body = JSON.parse(await readBody(req)) as { question: string };
       if (!body.question?.trim()) return send(res, 400, { error: "question is required" });
-      const out = await complete(ASK_SYSTEM, body.question.slice(0, 2000));
+      const out = await complete(ASK_SYSTEM, body.question.slice(0, 2000), 350);
       return send(res, 200, { model: out.model, answer: out.text.trim() });
     }
 

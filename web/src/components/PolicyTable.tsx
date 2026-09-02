@@ -90,6 +90,13 @@ export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snaps
   );
 }
 
+/** Raw token amount → human, using the incident's decimals when we know them. */
+function fmtValue(raw: string, inc?: Incident): string {
+  const dec = inc?.decimals ?? 18;
+  const n = Number(raw) / 10 ** dec;
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${inc?.token ?? `(${dec}dp)`}`;
+}
+
 /**
  * Real proof, real precompile, real decoder — all from the browser, read-only.
  * Then the AI reads what the precompile verified. Then (if active) submit.
@@ -168,7 +175,7 @@ function ProofPanel({ policy, snap, actor, act, busy, aiEnabled }: { policy: Pol
                     <td><code>{l.event}</code></td>
                     <td className="mono">{short(l.emitter)}</td>
                     <td className="mono muted">
-                      {l.from ? <>from {short(String(l.from))} → {short(String(l.to))} · {Number(l.value) / 1e6 >= 1 ? `${(Number(l.value) / 1e6).toLocaleString()} (6dp)` : String(l.value)}</> : l.newImplementation ? `→ ${short(String(l.newImplementation))}` : ""}
+                      {l.from ? <>from {short(String(l.from))} → {short(String(l.to))} · {fmtValue(String(l.value), inc)}</> : l.newImplementation ? `→ ${short(String(l.newImplementation))}` : ""}
                     </td>
                   </tr>
                 ))}
