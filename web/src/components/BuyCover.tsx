@@ -4,21 +4,16 @@ import { contractsFor, D, read, type Actor } from "../lib/chain";
 import { amount, bpsPct, pctOfWad } from "../lib/format";
 import { Kind, KINDS } from "../lib/triggers";
 import type { Snapshot } from "../lib/useProtocol";
+import type { PolicyDraft } from "../lib/ai";
+import { AiUnderwriter } from "./AiUnderwriter";
 
-interface Quote {
-  rateBps: bigint;
-  premium: bigint;
-  utilAfter: bigint;
-}
+type Act = (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
+
+interface Quote { rateBps: bigint; premium: bigint; utilAfter: bigint }
 
 export function BuyCover({
-  snap, actor, act, busy,
-}: {
-  snap: Snapshot;
-  actor: Actor | null;
-  act: (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
-  busy: string | null;
-}) {
+  snap, actor, act, busy, aiEnabled,
+}: { snap: Snapshot; actor: Actor | null; act: Act; busy: string | null; aiEnabled: boolean }) {
   const [target, setTarget] = useState(D.addresses.InsuredContract);
   const [kind, setKind] = useState<Kind>(Kind.ADMIN_UPGRADE);
   const [coverStr, setCoverStr] = useState("10000");
@@ -57,119 +52,109 @@ export function BuyCover({
   const overCapacity = cover > snap.pool.free;
   const me = actor?.address ?? "";
 
+  /** Apply an AI draft to the form. The owner still sees and edits every field. */
+  function applyDraft(d: PolicyDraft) {
+    if (d.kind !== undefined) setKind(Number(d.kind) as Kind);
+    if (d.coverAmount) setCoverStr(String(d.coverAmount).replace(/[^\d.]/g, ""));
+    if (d.threshold) setThresholdStr(String(d.threshold).replace(/[^\d.]/g, ""));
+    if (d.windowBlocks) setEndStr((start + BigInt(Math.max(1, Math.floor(d.windowBlocks)))).toString());
+  }
+
   async function buy() {
     const c = contractsFor(actor!.signer);
     const premium = (await read.pm.quote(kind, cover, blocks)) as bigint;
     // Slippage guard: the quote moves with utilisation, so accept up to 1% more.
     const maxPremium = (premium * 101n) / 100n;
-
     const allowance: bigint = await c.usd.allowance(me, D.addresses.CoverPool);
     if (allowance < maxPremium) {
       await (await c.usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n)).wait();
     }
-
     return c.pm.buyPolicy(
       { chainKey: D.chainKey, target, kind, threshold: kind === Kind.LARGE_OUTFLOW ? safeParse(thresholdStr) : 0n },
-      cover,
-      start,
-      end,
-      maxPremium,
+      cover, start, end, maxPremium,
     );
   }
 
   return (
-    <section className="card">
-      <h2>Buy cover</h2>
-      <p className="sub">
-        A policy names a contract on Ethereum and an event that counts as a loss. The
-        coverage window is measured in <em>source-chain</em> block numbers, so the same
+    <section className="panel">
+      <div className="panel-head">
+        <h2 className="panel-title">buy cover</h2>
+        <span className="dim">window in source-chain blocks</span>
+      </div>
+      <p className="panel-sub">
+        A policy names a contract on Ethereum and an event that counts as a loss. The same
         proof decides both whether the loss happened and whether it happened in time.
       </p>
 
-      <div className="grid">
-        <label className="wide">
-          Insured contract (on Ethereum)
+      <div className="form-grid form-grid-2">
+        <label className="field span-2">
+          <span className="field-label">insured contract · ethereum</span>
           <input value={target} onChange={(e) => setTarget(e.target.value)} spellCheck={false} />
         </label>
-
-        <label className="wide">
-          Loss event
+        <label className="field span-2">
+          <span className="field-label">loss event</span>
           <select value={kind} onChange={(e) => setKind(Number(e.target.value))}>
-            {KINDS.map((k) => (
-              <option key={k.kind} value={k.kind}>{k.label} — {k.signature}</option>
-            ))}
+            {KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}  —  {k.signature}</option>)}
           </select>
         </label>
-
-        <label>
-          Cover amount (mUSD)
+        <label className="field">
+          <span className="field-label">cover · mUSD</span>
           <input value={coverStr} onChange={(e) => setCoverStr(e.target.value)} />
         </label>
-
-        {kind === Kind.LARGE_OUTFLOW && (
-          <label>
-            Outflow threshold
+        {kind === Kind.LARGE_OUTFLOW ? (
+          <label className="field">
+            <span className="field-label">outflow threshold</span>
             <input value={thresholdStr} onChange={(e) => setThresholdStr(e.target.value)} />
           </label>
-        )}
-
-        <label>
-          Window start (source block)
+        ) : <div />}
+        <label className="field">
+          <span className="field-label">window start · block</span>
           <input value={startStr} onChange={(e) => setStartStr(e.target.value)} />
         </label>
-        <label>
-          Window end (source block)
+        <label className="field">
+          <span className="field-label">window end · block</span>
           <input value={endStr} onChange={(e) => setEndStr(e.target.value)} />
         </label>
       </div>
 
-      <p className="risk">{spec.risk}</p>
+      <div className="callout callout-warn">{spec.risk}</div>
 
       <div className="quote">
-        {quoteErr && <span className="bad">Quote failed: {quoteErr}</span>}
-        {!quoteErr && !quote && <span className="muted">Enter an amount and a window.</span>}
+        {quoteErr && <span className="bad">quote failed: {quoteErr}</span>}
+        {!quoteErr && !quote && <span className="dim">enter an amount and a window</span>}
         {quote && (
           <>
-            <div className="quote-main">
-              <span className="quote-premium">{amount(quote.premium, 4)} mUSD</span>
-              <span className="muted">premium for {blocks.toString()} blocks of cover</span>
+            <div className="quote-big">
+              <span className="quote-premium">{amount(quote.premium, 4)}</span>
+              <span className="quote-unit">mUSD premium · {blocks.toString()} blocks</span>
             </div>
-            <div className="quote-break">
-              <span>
-                rate <strong>{bpsPct(quote.rateBps)}</strong> annualised
-              </span>
-              <span>
-                utilisation after this policy <strong>{pctOfWad(quote.utilAfter)}</strong>
-              </span>
+            <div className="quote-meta">
+              <span>rate <b>{bpsPct(quote.rateBps)}</b> apr</span>
+              <span>utilisation after <b>{pctOfWad(quote.utilAfter)}</b></span>
+              <span className="dim">raise the cover and watch the rate climb past the kink</span>
             </div>
-            <p className="hint">
-              The rate is a function of how much of the pool this policy reserves. Raise the
-              cover amount and watch it climb — past 80% utilisation the curve steepens sharply.
-            </p>
           </>
         )}
       </div>
 
       {overCapacity && (
-        <p className="bad">
-          Cover exceeds the pool's free capacity ({amount(snap.pool.free)} mUSD). Deposit more
-          as the underwriter, or lower the cover.
-        </p>
+        <div className="alert alert-error">
+          cover exceeds free capacity ({amount(snap.pool.free)} mUSD) — deposit more, or lower it
+        </div>
       )}
 
       <button
+        className="btn btn-primary btn-wide"
         disabled={!!busy || !quote || overCapacity || !actor}
         onClick={() => act("Buy policy", buy)}
       >
-        {actor ? `Buy this policy as ${actor.label}` : "Connect a wallet to buy"}
+        {actor ? `buy this policy as ${actor.label}` : "connect a wallet to buy"}
       </button>
+
+      <AiUnderwriter snap={snap} enabled={aiEnabled} onDraft={applyDraft} />
     </section>
   );
 }
 
-function safeParse(s: string): bigint {
-  try { return parseEther(s || "0"); } catch { return 0n; }
-}
-function safeBig(s: string): bigint {
-  try { return BigInt(s || "0"); } catch { return 0n; }
-}
+function safeParse(s: string): bigint { try { return parseEther(s || "0"); } catch { return 0n; } }
+function safeBig(s: string): bigint { try { return BigInt(s || "0"); } catch { return 0n; } }

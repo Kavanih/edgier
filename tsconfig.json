@@ -10,5 +10,11 @@
     "resolveJsonModule": true,
     "outDir": "dist"
   },
-  "include": ["./scripts", "./test", "./watcher", "./hardhat.config.ts"]
+  "include": [
+    "./scripts",
+    "./test",
+    "./watcher",
+    "./server",
+    "./hardhat.config.ts"
+  ]
 }

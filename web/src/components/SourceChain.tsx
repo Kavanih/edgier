@@ -1,56 +1,40 @@
 import { contractsFor, D, IS_LOCAL, type Actor } from "../lib/chain";
 import type { Snapshot } from "../lib/useProtocol";
 
+type Act = (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
+
 /**
- * Local-only control over the mocked source chain.
- *
- * On Creditcoin this height comes from the ChainInfo precompile and moves on its
- * own as Ethereum blocks are attested. `PolicyManager.expire` reads it from the
- * precompile rather than trusting the caller — an earlier version took the
- * height as an argument, which let anyone free an underwriter's locked capital
- * by lying about it.
+ * Local-only control over the mocked source chain. On Creditcoin this height
+ * comes from the ChainInfo precompile and `PolicyManager.expire` reads it from
+ * there rather than trusting the caller.
  */
 export function SourceChain({
   snap, actor, act, busy,
-}: {
-  snap: Snapshot;
-  actor: Actor | null;
-  act: (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
-  busy: string | null;
-}) {
+}: { snap: Snapshot; actor: Actor | null; act: Act; busy: string | null }) {
   if (!IS_LOCAL) return null;
-
   return (
-    <section className="card card-dev">
-      <h2>Mock source chain</h2>
-      <p className="sub">
-        Creditcoin's attested view of Ethereum. A policy can only expire once the{" "}
-        <em>attested</em> height has moved past its window — read from the precompile, never
-        supplied by the caller.
-      </p>
-      <div className="row">
-        <div className="stat">
-          <span className="stat-label">Latest attested Ethereum height</span>
-          <span className="stat-value mono">{snap.attestedHeight.toString()}</span>
-        </div>
-        <button
-          className="secondary"
-          disabled={!!busy || !actor}
-          onClick={() =>
-            act("Advance attested height", async () =>
-              contractsFor(actor!.signer).chainInfo.setLatest(
-                D.chainKey, snap.attestedHeight + 200_000n, true,
-              ),
-            )
-          }
-        >
-          Attest 200,000 more blocks
-        </button>
+    <section className="panel panel-mock">
+      <div className="panel-head">
+        <h2 className="panel-title">mock source chain</h2>
+        <span className="dim">local only</span>
       </div>
-      <p className="hint">
-        Push this past a policy's window end, then use <em>Expire</em> to release the
-        underwriter's capital. Cover was written from block {D.startAttestedHeight}.
+      <p className="panel-sub">
+        Creditcoin's attested view of Ethereum. A policy can only expire once the attested
+        height has moved past its window — read from the precompile, never from the caller.
       </p>
+      <div className="kpi kpi-inline">
+        <span className="kpi-label">latest attested height</span>
+        <span className="kpi-value">{snap.attestedHeight.toString()}</span>
+      </div>
+      <button
+        className="btn btn-ghost"
+        disabled={!!busy || !actor}
+        onClick={() => act("Advance attested height", async () =>
+          contractsFor(actor!.signer).chainInfo.setLatest(D.chainKey, snap.attestedHeight + 200_000n, true))}
+      >
+        attest +200,000 blocks
+      </button>
+      <p className="hint">push past a window end, then <em>expire</em> to release the underwriter's capital.</p>
     </section>
   );
 }

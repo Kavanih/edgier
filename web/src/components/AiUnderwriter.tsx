@@ -1,0 +1,92 @@
+import { useState } from "react";
+import { draftPolicy, type PolicyDraft } from "../lib/ai";
+import { KINDS } from "../lib/triggers";
+import type { Snapshot } from "../lib/useProtocol";
+import { amount } from "../lib/format";
+
+/**
+ * Plain English in, policy terms out. The model proposes; the owner reviews
+ * and the contract prices. It never touches the chain.
+ */
+export function AiUnderwriter({
+  snap, enabled, onDraft,
+}: {
+  snap: Snapshot;
+  enabled: boolean;
+  onDraft: (d: PolicyDraft) => void;
+}) {
+  const [intent, setIntent] = useState(
+    "My vault is behind an upgradeable proxy controlled by a 2-of-3 multisig. I want cover if the admins swap the implementation.",
+  );
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<PolicyDraft | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true); setErr(null);
+    try {
+      const { model, result } = await draftPolicy(intent, {
+        poolFreeCapacity_mUSD: amount(snap.pool.free, 0),
+        triggerKinds: KINDS.map((k) => ({ kind: k.kind, label: k.label, signature: k.signature })),
+      });
+      setDraft(result); setModel(model);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="ai">
+      <div className="ai-head">
+        <span className="ai-badge">AI</span>
+        <span className="ai-title">underwriting assistant</span>
+        {model && <span className="ai-model">{model}</span>}
+      </div>
+      <p className="panel-sub">
+        Describe the risk in plain English. The model maps it onto a trigger the proof can
+        actually establish — and tells you what that trigger will <em>not</em> catch.
+      </p>
+      <textarea
+        rows={3}
+        value={intent}
+        onChange={(e) => setIntent(e.target.value)}
+        disabled={!enabled}
+      />
+      <div className="row">
+        <button className="btn btn-ghost" disabled={!enabled || busy || !intent.trim()} onClick={run}>
+          {busy ? "thinking…" : "draft policy"}
+        </button>
+        {!enabled && <span className="dim">sidecar offline — set OPENROUTER_API_KEY and run <code>npm run ai</code></span>}
+      </div>
+
+      {err && <div className="alert alert-error">{err}</div>}
+
+      {draft && !draft.raw && (
+        <div className="ai-out">
+          <div className="ai-row">
+            <span className="k">trigger</span>
+            <span className="v">{KINDS[draft.kind ?? 0]?.label ?? "?"}</span>
+          </div>
+          <div className="ai-row"><span className="k">cover</span><span className="v">{draft.coverAmount} mUSD</span></div>
+          <div className="ai-row"><span className="k">window</span><span className="v">{draft.windowBlocks} blocks</span></div>
+          {Number(draft.kind) === 2 && (
+            <div className="ai-row"><span className="k">threshold</span><span className="v">{draft.threshold}</span></div>
+          )}
+          <p className="ai-text">{draft.rationale}</p>
+          {!!draft.caveats?.length && (
+            <ul className="ai-caveats">
+              {draft.caveats.map((c, i) => <li key={i}>{c}</li>)}
+            </ul>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={() => onDraft(draft)}>
+            use these terms
+          </button>
+        </div>
+      )}
+      {draft?.raw && <pre className="ai-raw">{draft.raw}</pre>}
+    </div>
+  );
+}
