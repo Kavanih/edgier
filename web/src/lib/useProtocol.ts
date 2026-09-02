@@ -69,6 +69,10 @@ export interface LogLine {
   source: string;
   name: string;
   detail: string;
+  /** Creditcoin transaction that emitted it. */
+  txHash: string;
+  /** Decoded args, stringified, in ABI order. */
+  args: string[];
 }
 
 export interface Holding {
@@ -125,6 +129,8 @@ async function loadEvents(): Promise<LogLine[]> {
         source: src.name,
         name: l.eventName,
         detail: describe(l.eventName, args),
+        txHash: l.transactionHash,
+        args: args.map((a) => (typeof a === "bigint" ? a.toString() : String(a))),
       });
     }
   }

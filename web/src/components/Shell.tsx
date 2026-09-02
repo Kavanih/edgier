@@ -4,6 +4,7 @@ import { short } from "../lib/format";
 import { PAGES, app, landing, type Page } from "../lib/router";
 import type { AiStatus } from "../lib/ai";
 import { Icon } from "./Icons";
+import { AskEdgier } from "./AskEdgier";
 
 export function Shell({
   page, role, setRole, actor, connect, ai, children,
@@ -22,8 +23,7 @@ export function Shell({
   return (
     <div className="app">
       <aside className="sidebar">
-        <a className="logo" href={landing()}>
-          <span className="logo-mark"><Icon name="bolt" size={16} /></span>
+        <a className="logo" href={landing()} title="the edge is the proof">
           <span className="logo-text">edgier<span className="caret">_</span></span>
         </a>
 
@@ -86,6 +86,7 @@ export function Shell({
 
         <main className="content" key={page}>{children}</main>
       </div>
+      <AskEdgier enabled={!!ai?.enabled} />
     </div>
   );
 }

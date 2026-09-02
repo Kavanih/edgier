@@ -57,6 +57,9 @@ export const draftPolicy = (intent: string, context: unknown) =>
 export const analyseIncident = (incident: unknown, policies: unknown) =>
   post<IncidentAnalysis>("/api/ai/analyse-incident", { incident, policies });
 
+export const ask = (question: string) =>
+  post<never>("/api/ai/ask", { question }) as unknown as Promise<{ model: string; answer: string }>;
+
 // --- turning a proven blob into something a model can read -----------------
 
 const TX_FIELDS =

@@ -1,6 +1,6 @@
 {
   "mode": "live",
-  "label": "Creditcoin CC3 Testnet \u2014 real Attestcoin precompiles",
+  "label": "Creditcoin CC3 Testnet — real Attestcoin precompiles",
   "chainId": 102031,
   "rpcUrl": "https://rpc.cc3-testnet.creditcoin.network",
   "explorer": "https://creditcoin-testnet.blockscout.com",
@@ -12,7 +12,9 @@
     "PolicyManager": "0xAc4B45EFe11AA77870731c3bA758f4B3967e0198",
     "ClaimVerifier": "0x1F68dFb0c07F3438ABc7Af812d633A6f426B31A3",
     "ChainInfo": "0x0000000000000000000000000000000000000FD3",
-    "InsuredContract": "0x1A2a1c938CE3eC39b6D47113c7955bAa9DD454F2"
+    "InsuredContract": "0x1A2a1c938CE3eC39b6D47113c7955bAa9DD454F2",
+    "BlockProver": "0x0000000000000000000000000000000000000FD2",
+    "Decoder": "0x731c345d79Fb8BbDC541f9DF3b6317585F849F9f"
   },
   "abis": {
     "CoverPool": [
@@ -2774,6 +2776,488 @@
           }
         ],
         "stateMutability": "view",
+        "type": "function"
+      }
+    ],
+    "BlockProver": [
+      {
+        "inputs": [
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "root",
+                "type": "bytes32"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "bytes32",
+                    "name": "hash",
+                    "type": "bytes32"
+                  },
+                  {
+                    "internalType": "bool",
+                    "name": "isLeft",
+                    "type": "bool"
+                  }
+                ],
+                "internalType": "struct MerkleProofEntry[]",
+                "name": "siblings",
+                "type": "tuple[]"
+              }
+            ],
+            "internalType": "struct TransactionMerkleProof",
+            "name": "merkleProof",
+            "type": "tuple"
+          }
+        ],
+        "name": "calculateTxIndex",
+        "outputs": [
+          {
+            "internalType": "uint64",
+            "name": "",
+            "type": "uint64"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64[]",
+            "name": "heights",
+            "type": "uint64[]"
+          },
+          {
+            "internalType": "bytes[]",
+            "name": "encodedTransactions",
+            "type": "bytes[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "root",
+                "type": "bytes32"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "bytes32",
+                    "name": "hash",
+                    "type": "bytes32"
+                  },
+                  {
+                    "internalType": "bool",
+                    "name": "isLeft",
+                    "type": "bool"
+                  }
+                ],
+                "internalType": "struct MerkleProofEntry[]",
+                "name": "siblings",
+                "type": "tuple[]"
+              }
+            ],
+            "internalType": "struct TransactionMerkleProof[]",
+            "name": "merkleProofs",
+            "type": "tuple[]"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "lowerEndpointDigest",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32[]",
+                "name": "roots",
+                "type": "bytes32[]"
+              }
+            ],
+            "internalType": "struct ContinuityProof",
+            "name": "sharedContinuityProof",
+            "type": "tuple"
+          }
+        ],
+        "name": "verify",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "height",
+            "type": "uint64"
+          },
+          {
+            "internalType": "bytes",
+            "name": "encodedTransaction",
+            "type": "bytes"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "root",
+                "type": "bytes32"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "bytes32",
+                    "name": "hash",
+                    "type": "bytes32"
+                  },
+                  {
+                    "internalType": "bool",
+                    "name": "isLeft",
+                    "type": "bool"
+                  }
+                ],
+                "internalType": "struct MerkleProofEntry[]",
+                "name": "siblings",
+                "type": "tuple[]"
+              }
+            ],
+            "internalType": "struct TransactionMerkleProof",
+            "name": "merkleProof",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "lowerEndpointDigest",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32[]",
+                "name": "roots",
+                "type": "bytes32[]"
+              }
+            ],
+            "internalType": "struct ContinuityProof",
+            "name": "continuityProof",
+            "type": "tuple"
+          }
+        ],
+        "name": "verify",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "height",
+            "type": "uint64"
+          },
+          {
+            "internalType": "bytes",
+            "name": "encodedTransaction",
+            "type": "bytes"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "root",
+                "type": "bytes32"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "bytes32",
+                    "name": "hash",
+                    "type": "bytes32"
+                  },
+                  {
+                    "internalType": "bool",
+                    "name": "isLeft",
+                    "type": "bool"
+                  }
+                ],
+                "internalType": "struct MerkleProofEntry[]",
+                "name": "siblings",
+                "type": "tuple[]"
+              }
+            ],
+            "internalType": "struct TransactionMerkleProof",
+            "name": "merkleProof",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "lowerEndpointDigest",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32[]",
+                "name": "roots",
+                "type": "bytes32[]"
+              }
+            ],
+            "internalType": "struct ContinuityProof",
+            "name": "continuityProof",
+            "type": "tuple"
+          }
+        ],
+        "name": "verifyAndEmit",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      }
+    ],
+    "Decoder": [
+      {
+        "inputs": [
+          {
+            "internalType": "bytes",
+            "name": "chunk",
+            "type": "bytes"
+          }
+        ],
+        "name": "decodeCommonTxFields",
+        "outputs": [
+          {
+            "components": [
+              {
+                "internalType": "uint64",
+                "name": "nonce",
+                "type": "uint64"
+              },
+              {
+                "internalType": "uint64",
+                "name": "gasLimit",
+                "type": "uint64"
+              },
+              {
+                "internalType": "address",
+                "name": "from",
+                "type": "address"
+              },
+              {
+                "internalType": "bool",
+                "name": "toIsNull",
+                "type": "bool"
+              },
+              {
+                "internalType": "address",
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "internalType": "uint256",
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "internalType": "bytes",
+                "name": "data",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct CommonTxFields",
+            "name": "",
+            "type": "tuple"
+          }
+        ],
+        "stateMutability": "pure",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "bytes",
+            "name": "chunk",
+            "type": "bytes"
+          }
+        ],
+        "name": "decodeReceiptFields",
+        "outputs": [
+          {
+            "components": [
+              {
+                "internalType": "uint8",
+                "name": "receiptStatus",
+                "type": "uint8"
+              },
+              {
+                "internalType": "uint64",
+                "name": "receiptGasUsed",
+                "type": "uint64"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "address",
+                    "name": "address_",
+                    "type": "address"
+                  },
+                  {
+                    "internalType": "bytes32[]",
+                    "name": "topics",
+                    "type": "bytes32[]"
+                  },
+                  {
+                    "internalType": "bytes",
+                    "name": "data",
+                    "type": "bytes"
+                  }
+                ],
+                "internalType": "struct LogEntry[]",
+                "name": "receiptLogs",
+                "type": "tuple[]"
+              },
+              {
+                "internalType": "bytes",
+                "name": "receiptLogsBloom",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct ReceiptFields",
+            "name": "",
+            "type": "tuple"
+          }
+        ],
+        "stateMutability": "pure",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "address_",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32[]",
+                "name": "topics",
+                "type": "bytes32[]"
+              },
+              {
+                "internalType": "bytes",
+                "name": "data",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct LogEntry[]",
+            "name": "logs",
+            "type": "tuple[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "eventSignature",
+            "type": "bytes32"
+          }
+        ],
+        "name": "getLogsByEventSignature",
+        "outputs": [
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "address_",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32[]",
+                "name": "topics",
+                "type": "bytes32[]"
+              },
+              {
+                "internalType": "bytes",
+                "name": "data",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct LogEntry[]",
+            "name": "",
+            "type": "tuple[]"
+          }
+        ],
+        "stateMutability": "pure",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "bytes",
+            "name": "chunk",
+            "type": "bytes"
+          }
+        ],
+        "name": "getTransactionType",
+        "outputs": [
+          {
+            "internalType": "uint8",
+            "name": "",
+            "type": "uint8"
+          }
+        ],
+        "stateMutability": "pure",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint8",
+            "name": "txType",
+            "type": "uint8"
+          }
+        ],
+        "name": "isValidTransactionType",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "pure",
         "type": "function"
       }
     ]

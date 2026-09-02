@@ -21,6 +21,8 @@ const ABI_SOURCES: Record<string, string> = {
   ClaimVerifier: "ClaimVerifier",
   MockUSD: "MockUSD",
   ChainInfo: "IChainInfo",
+  BlockProver: "IBlockProver",
+  Decoder: "IEvmV1Decoder",
 };
 
 async function main() {
@@ -109,6 +111,8 @@ async function main() {
       PolicyManager: await policyManager.getAddress(),
       ClaimVerifier: await claimVerifier.getAddress(),
       ChainInfo: AttestcoinAddresses.CHAIN_INFO_PRECOMPILE,
+      BlockProver: AttestcoinAddresses.BLOCK_PROVER_PRECOMPILE,
+      Decoder: AttestcoinAddresses.DECODER_CC3_TESTNET,
       InsuredContract:
         process.env.VULNERABLE_VAULT_ADDRESS ??
         "0x0000000000000000000000000000000000000000",

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as dotenv from "dotenv";
+import { proofProvider } from "@gluwa/usc-sdk";
 dotenv.config();
 
 /**
@@ -26,6 +27,7 @@ const KEY = process.env.OPENROUTER_API_KEY;
 const DAILY_CAP = Number(process.env.OPENROUTER_DAILY_CAP ?? 900);
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const PROOF_BUILDER_URL = process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network";
 
 /** Tried in order. Anything free that is not listed here is a fallback. */
 const PREFERRED = [
@@ -175,6 +177,18 @@ Return: {"headline": "<one line>", "whatHappened": "<2-4 sentences>",
 "verdicts": [{"policyId": <n>, "triggerMet": true|false, "reason": "<one sentence>"}],
 "caveats": ["<anything the data cannot establish>", ...]}`;
 
+const ASK_SYSTEM = `${PRINCIPLE}
+
+You also answer questions from visitors about Edgier. Facts you may rely on:
+- Edgier is on-chain insurance for DeFi protocols. Capital, policies and settlement live on Creditcoin; the insured contracts live on Ethereum.
+- A policy names a contract and one of three loss events, matched on event logs of a proven transaction: ADMIN_UPGRADE (EIP-1967 Upgraded / OwnershipTransferred), EMERGENCY_PAUSE (OpenZeppelin Paused), LARGE_OUTFLOW (ERC-20 Transfer out of the contract >= threshold).
+- Claims settle when the Attestcoin BlockProver precompile (0x…0FD2) verifies an inclusion + continuity proof that the transaction was in an attested Ethereum block. receiptStatus must be 1. Anyone can call submitClaim — it is permissionless.
+- Premiums follow a kinked utilisation curve (base per kind, kink at 80%). Underwriters deposit into an ERC-4626 pool (EDGR shares). Expiry is decided by the attested source-chain height.
+- Up to 10 policies settle in one batch against a single continuity proof.
+- It has settled a real claim: a policy on the Ronin Bridge (Ethereum mainnet) paid 10,000 mUSD against an Attestcoin proof of the 2022 exploit transaction, on Creditcoin CC3 Testnet.
+- AI (you) is advisory only and cannot move funds.
+Answer in plain prose, 2-5 sentences, no JSON for this task. If asked something the facts do not cover, say you do not know.`;
+
 // --- http -----------------------------------------------------------------
 
 function send(res: ServerResponse, status: number, body: unknown) {
@@ -213,6 +227,25 @@ const server = createServer(async (req, res) => {
         dailyCap: DAILY_CAP,
         listError,
       });
+    }
+
+    // Proof service proxy: the browser cannot call the prover cross-origin, and this
+    // keeps one place responsible for talking to it. Read-only; nothing is signed.
+    if (req.method === "GET" && url.pathname === "/api/proof") {
+      const chainKey = Number(url.searchParams.get("chainKey") ?? 3);
+      const tx = url.searchParams.get("tx") ?? "";
+      if (!/^0x[0-9a-fA-F]{64}$/.test(tx)) return send(res, 400, { error: "tx must be a 0x-prefixed 32-byte hash" });
+      const builder = new proofProvider.service.ProofBuilder(chainKey, PROOF_BUILDER_URL, 60_000);
+      const r = await builder.getProof(tx);
+      if (!r.success || !r.data) return send(res, 502, { error: r.error ?? "proof service failed" });
+      return send(res, 200, r.data);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ai/ask") {
+      const body = JSON.parse(await readBody(req)) as { question: string };
+      if (!body.question?.trim()) return send(res, 400, { error: "question is required" });
+      const out = await complete(ASK_SYSTEM, body.question.slice(0, 2000));
+      return send(res, 200, { model: out.model, answer: out.text.trim() });
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/draft-policy") {

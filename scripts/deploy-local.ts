@@ -35,6 +35,8 @@ const ABI_SOURCES: Record<string, string> = {
   // Locally the mock stands in for the ChainInfo precompile, and adds setLatest
   // so the demo can fast-forward the source chain.
   ChainInfo: "MockChainInfo",
+  BlockProver: "MockBlockProver",
+  Decoder: "MockEvmV1Decoder",
 };
 
 async function main() {
@@ -104,6 +106,8 @@ async function main() {
       PolicyManager: await pm.getAddress(),
       ClaimVerifier: await verifier.getAddress(),
       ChainInfo: await chainInfo.getAddress(),
+      BlockProver: await prover.getAddress(),
+      Decoder: await decoder.getAddress(),
       // The contract on Ethereum a demo policy is written against. Locally there
       // is no such contract, so this is only ever used as a trigger `target`.
       InsuredContract: "0x00000000000000000000000000000000000000A1",

@@ -125,6 +125,10 @@ export function contractsFor(runner: Signer | JsonRpcProvider) {
     pm: new Contract(a.PolicyManager, abi("PolicyManager"), runner),
     verifier: new Contract(a.ClaimVerifier, abi("ClaimVerifier"), runner),
     chainInfo: new Contract(a.ChainInfo, abi("ChainInfo"), runner),
+    // Attestcoin itself. Both are view-only from the UI's point of view: the
+    // browser can verify a proof and decode the proven bytes without signing.
+    blockProver: new Contract(a.BlockProver, abi("BlockProver"), runner),
+    decoder: new Contract(a.Decoder, abi("Decoder"), runner),
   };
 }
 
