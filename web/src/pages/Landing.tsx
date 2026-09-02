@@ -247,7 +247,13 @@ function Orbit({ steps }: { steps: typeof STEPS }) {
             <circle cx="50" cy="50" r={R - 6} className="orbit-fill" />
             <g className="ring" style={{ transform: `rotate(${spin}deg)` }}><circle cx="50" cy="50" r={R} className="orbit-track" /></g>
             <g className="ring" style={{ transform: `rotate(${-spin * 1.4}deg)` }}><circle cx="50" cy="50" r={R - 6} className="orbit-inner" /></g>
-            <g className="ring-arc"><circle cx="50" cy="50" r={R} className="orbit-arc" pathLength={100} style={{ strokeDasharray: `${progress} 100` }} /></g>
+            {/* dashed amber ring, revealed through a mask whose length is the progress */}
+            <defs>
+              <mask id="arcMask">
+                <circle cx="50" cy="50" r={R} className="orbit-mask" pathLength={100} style={{ strokeDasharray: `${progress} 100` }} />
+              </mask>
+            </defs>
+            <g className="ring" style={{ transform: `rotate(${spin}deg)` }}><circle cx="50" cy="50" r={R} className="orbit-arc" mask="url(#arcMask)" /></g>
           </svg>
           {steps.map((st, i) => (
             <button key={st.n} className={`orbit-node ${i === active ? "active" : ""} ${i < active ? "done" : ""}`} style={{ ...pos(i), animationDelay: `${0.35 + i * 0.12}s` }} onClick={() => jump(i)}>
