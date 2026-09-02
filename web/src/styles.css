@@ -331,7 +331,8 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .split-col h2 { font-size: 26px; letter-spacing: -0.03em; margin: 12px 0 10px; } .split-col p { color: var(--text-2); font-size: 15px; margin: 0; }
 .split-bad { box-shadow: 4px 4px 0 var(--bad); } .split-ok { box-shadow: 4px 4px 0 var(--ok); }
 .l-journey { max-width: var(--read-w); margin: 90px auto 0; padding: 0 40px; text-align: center; position: relative; }
-.l-journey::before { content: ""; position: absolute; left: 50%; top: 120px; bottom: 30px; width: 0; border-left: 2px dashed var(--line-2); transform: translateX(-50%); }
+.journey-list { display: none; position: relative; }
+.journey-list::before { content: ""; position: absolute; left: 22px; top: 0; bottom: 30px; width: 0; border-left: 2px dashed var(--line-2); }
 .journey { display: grid; grid-template-columns: 1fr 64px 1fr; align-items: center; margin: 18px 0; text-align: left; }
 .journey-n { grid-column: 2; width: 44px; height: 44px; margin: 0 auto; border-radius: 6px; display: grid; place-items: center; background: var(--ink); border: 2px solid var(--ink); color: var(--surface); font: 700 12px var(--mono); box-shadow: 0 0 0 6px var(--bg); }
 .journey-card { background: var(--surface); border: 1px solid var(--ink); border-radius: 8px; padding: 18px 20px; box-shadow: var(--shadow); }
@@ -375,3 +376,30 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   .proof-steps { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 640px) { .l-split, .l-ai, .feat-grid, .l-stats { grid-template-columns: 1fr; } .l-links a:not(.btn) { display: none; } .ask-panel { width: calc(100vw - 32px); right: 16px; } }
+
+/* ---------- orbit ---------- */
+.orbit { position: relative; width: min(880px, 92vw); aspect-ratio: 1; margin: 10px auto 0; }
+.orbit-svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.orbit-track { fill: none; stroke: var(--line-2); stroke-width: .5; stroke-dasharray: 1.2 1.2; }
+.orbit-arc { fill: none; stroke: var(--accent); stroke-width: 1.1; stroke-linecap: round; transition: stroke-dasharray .7s cubic-bezier(.2,.7,.2,1); }
+.orbit-inner { fill: var(--surface); stroke: var(--ink); stroke-width: .35; }
+.orbit-node { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: 150px; padding: 10px 8px; border-radius: 8px; border: 1px solid var(--ink); background: var(--surface); box-shadow: 3px 3px 0 var(--line-2); cursor: pointer; font: inherit; color: var(--text); text-align: center; transition: transform .35s cubic-bezier(.2,.7,.2,1), box-shadow .25s, background .25s; }
+.orbit-node .orbit-n { width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; background: var(--ink); color: var(--surface); font-weight: 700; font-size: 12px; transition: background .25s; }
+.orbit-node .orbit-t { font-size: 12px; font-weight: 600; line-height: 1.3; }
+.orbit-node.done .orbit-n { background: var(--ok); }
+.orbit-node.active { transform: translate(-50%, -50%) scale(1.12); box-shadow: 5px 5px 0 var(--accent); z-index: 2; }
+.orbit-node.active .orbit-n { background: var(--accent); animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 #d9530b66; } 100% { box-shadow: 0 0 0 14px #d9530b00; } }
+.orbit-center { position: absolute; left: 50%; top: 50%; width: min(420px, 50%); transform: translate(-50%, -50%); text-align: center; animation: fade .35s ease-out; }
+.orbit-center h3 { font-size: clamp(16px, 1.6vw, 24px); margin: 10px 0 8px; }
+.orbit-center p { color: var(--text-2); font-size: clamp(12px, 1vw, 14.5px); margin: 0; }
+.orbit-dots { display: flex; gap: 6px; justify-content: center; margin-top: 14px; }
+.orbit-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); cursor: pointer; transition: background .2s, transform .2s; }
+.orbit-dots i.on { background: var(--accent); transform: scale(1.3); }
+/* reveal: nodes pop in one after another */
+.orbit .orbit-node { opacity: 0; }
+.orbit.in .orbit-node { animation: pop .5s cubic-bezier(.2,.7,.2,1) forwards; }
+.orbit.in .orbit-node:nth-child(2) { animation-delay: .05s } .orbit.in .orbit-node:nth-child(3) { animation-delay: .2s } .orbit.in .orbit-node:nth-child(4) { animation-delay: .35s } .orbit.in .orbit-node:nth-child(5) { animation-delay: .5s } .orbit.in .orbit-node:nth-child(6) { animation-delay: .65s }
+@keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(.6); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.orbit.in .orbit-node.active { animation: pop .5s cubic-bezier(.2,.7,.2,1) forwards; transform: translate(-50%, -50%) scale(1.12); }
+@media (max-width: 760px) { .orbit { display: none; } .journey-list { display: block; } }

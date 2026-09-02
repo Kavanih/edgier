@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "../components/Icons";
 import { INCIDENTS, blockscoutTx, etherscanTx } from "../lib/incidents";
 import { app } from "../lib/router";
@@ -14,6 +14,14 @@ const TERMINAL = [
   "    merkle siblings 9 · continuity roots 161",
   "[3] checkClaim → proofValid=true triggerMet=true inWindow=true",
   "✅ SETTLED BY PROOF · payout 10000.0 mUSD · gas 571354 · status CLAIMED",
+];
+
+const STEPS = [
+  { n: "01", title: "Buy cover", tag: "PolicyManager.buyPolicy", body: "Name a contract on Ethereum and the event that counts as a loss — an admin upgrade, an emergency pause, a treasury drain. The premium is priced by how much of the pool you reserve." },
+  { n: "02", title: "The loss lands on Ethereum", tag: "event log", body: "Your vault emits Upgraded(address), Paused(address), or a large ERC-20 Transfer out. It is in a block. It is history." },
+  { n: "03", title: "Creditcoin attests the block", tag: "ChainInfo precompile", body: "Periodically, not instantly — the honest cost of not trusting an oracle. From then on the transaction can be proven." },
+  { n: "04", title: "Anyone fetches a proof", tag: "@gluwa/usc-sdk", body: "The watcher, you, or a stranger. It cannot forge a payout and it cannot withhold one. It is a convenience, not an authority." },
+  { n: "05", title: "The precompile decides", tag: "ClaimVerifier.submitClaim", body: "BlockProver.verify() returns true or the claim reverts. The receipt is decoded, receiptStatus checked, the trigger matched, the pool pays." },
 ];
 
 export function Landing({ snap }: { snap: Snapshot | null }) {
@@ -92,12 +100,11 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       </Reveal>
 
       <section className="l-journey" id="how">
-        <Reveal><h2 className="l-h2">How a claim actually settles</h2><p className="l-sub">Five steps. No humans in the loop after step one.</p></Reveal>
-        <Journey n="01" title="Buy cover" side="l" body="Name a contract on Ethereum and the event that counts as a loss — an admin upgrade, an emergency pause, a treasury drain. The premium is priced by how much of the pool you reserve." tag="PolicyManager.buyPolicy" />
-        <Journey n="02" title="The loss lands on Ethereum" side="r" body="Your vault emits Upgraded(address), Paused(address), or a large ERC-20 Transfer out. It is in a block. It is history." tag="event log" />
-        <Journey n="03" title="Creditcoin attests the block" side="l" body="Periodically, not instantly — the honest cost of not trusting an oracle. From then on the transaction can be proven." tag="ChainInfo precompile" />
-        <Journey n="04" title="Anyone fetches a proof" side="r" body="The watcher, you, or a stranger. It cannot forge a payout and it cannot withhold one. It is a convenience, not an authority." tag="@gluwa/usc-sdk" />
-        <Journey n="05" title="The precompile decides" side="l" body="BlockProver.verify() returns true or the claim reverts. The receipt is decoded, receiptStatus checked, the trigger matched, the pool pays." tag="ClaimVerifier.submitClaim" />
+        <Reveal><h2 className="l-h2">How a claim actually settles</h2><p className="l-sub">Five steps. No humans in the loop after the first.</p></Reveal>
+        <Orbit steps={STEPS} />
+        <div className="journey-list">
+          {STEPS.map((st, i) => <Journey key={st.n} n={st.n} title={st.title} body={st.body} side={i % 2 ? "r" : "l"} tag={st.tag} />)}
+        </div>
       </section>
 
       <section className="l-proof" id="proof">
@@ -183,6 +190,48 @@ function Stats({ snap }: { snap: Snapshot | null }) {
       <div><b ref={b.ref as never}>{b.v}</b><span>claims paid by proof</span></div>
       <div><b>0</b><span>votes required</span></div>
       <div><b ref={c.ref as never}>{c.v.toLocaleString()}</b><span>gas per settlement</span></div>
+    </div>
+  );
+}
+
+/** The five steps on a ring. An amber arc sweeps to the active step; the center explains it. */
+function Orbit({ steps }: { steps: typeof STEPS }) {
+  const ref = useReveal<HTMLDivElement>(0.25);
+  const [active, setActive] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (paused) return;
+    const t = setInterval(() => setActive((a) => (a + 1) % steps.length), 2600);
+    return () => clearInterval(t);
+  }, [paused, steps.length]);
+
+  const R = 41; // percent of the box
+  const pos = (i: number) => {
+    const ang = (-90 + (360 / steps.length) * i) * (Math.PI / 180);
+    return { left: `${50 + R * Math.cos(ang)}%`, top: `${50 + R * Math.sin(ang)}%` };
+  };
+  const progress = ((active + 1) / steps.length) * 100;
+  const cur = steps[active];
+
+  return (
+    <div ref={ref} className="reveal orbit" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <svg viewBox="0 0 100 100" className="orbit-svg" aria-hidden="true">
+        <circle cx="50" cy="50" r={R} className="orbit-track" />
+        <circle cx="50" cy="50" r={R} className="orbit-arc" pathLength={100} style={{ strokeDasharray: `${progress} 100` }} />
+        <circle cx="50" cy="50" r={R - 6} className="orbit-inner" />
+      </svg>
+      {steps.map((st, i) => (
+        <button key={st.n} className={`orbit-node ${i === active ? "active" : ""} ${i < active ? "done" : ""}`} style={pos(i)} onClick={() => setActive(i)}>
+          <span className="orbit-n">{st.n}</span>
+          <span className="orbit-t">{st.title}</span>
+        </button>
+      ))}
+      <div className="orbit-center" key={active}>
+        <span className="chip"><code>{cur.tag}</code></span>
+        <h3>{cur.title}</h3>
+        <p>{cur.body}</p>
+        <div className="orbit-dots">{steps.map((_, i) => <i key={i} className={i === active ? "on" : ""} onClick={() => setActive(i)} />)}</div>
+      </div>
     </div>
   );
 }
