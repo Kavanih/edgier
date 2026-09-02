@@ -284,8 +284,9 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .toasts { bottom: 90px; }
 
 /* ---------- landing ---------- */
-.landing { position: relative; overflow: hidden; min-height: 100vh; }
-.blobs { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+/* overflow-x: clip, not hidden — hidden makes .landing a scroll container and kills position: sticky inside it */
+.landing { position: relative; overflow-x: clip; min-height: 100vh; }
+.blobs { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: clip; }
 /* Pre-blurred radial gradients, not filter:blur on huge elements — the latter
    starved the compositor badly enough that entrance animations never finished. */
 .blobs i { position: absolute; border-radius: 50%; will-change: transform; animation: drift 22s ease-in-out infinite alternate; }
