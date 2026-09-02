@@ -45,7 +45,7 @@ b { font-weight: 600; }
 .small { font-size: 12.5px; }
 .bad { color: var(--bad-ink); }
 .ellipsis { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-::selection { background: #5b3df52e; }
+::selection { background: #d9530b33; }
 
 /* ---------- app shell ---------- */
 .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
@@ -306,7 +306,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .l-hero p { max-width: 62ch; margin: 0 auto 26px; font-size: 17.5px; color: var(--text-2); }
 .l-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .rise { opacity: 0; transform: translateY(14px); animation: riseIn .7s cubic-bezier(.2,.7,.2,1) forwards; }
-.d0 { animation-delay: .05s } .d1 { animation-delay: .15s } .d2 { animation-delay: .3s } .d3 { animation-delay: .45s } .d4 { animation-delay: .65s }
+.d0 { animation-delay: .02s } .d1 { animation-delay: .1s } .d2 { animation-delay: .2s } .d3 { animation-delay: .3s } .d4 { animation-delay: .45s }
 @keyframes riseIn { to { opacity: 1; transform: none; } }
 .l-float { position: relative; height: 210px; max-width: 980px; margin: 40px auto 0; }
 .float-card { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 6px; background: var(--surface); border: 1px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); text-align: left; animation: floaty 6s ease-in-out infinite; }
