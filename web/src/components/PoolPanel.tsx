@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { parseEther } from "ethers";
-import { contractsFor, D, walletFor, type Role } from "../lib/chain";
+import { contractsFor, D, type Actor } from "../lib/chain";
 import { amount, pctOfWad } from "../lib/format";
 import type { Snapshot } from "../lib/useProtocol";
 
 export function PoolPanel({
-  snap, role, act, busy,
+  snap, actor, act, busy,
 }: {
   snap: Snapshot;
-  role: Role;
+  actor: Actor | null;
   act: (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
   busy: string | null;
 }) {
@@ -18,8 +18,8 @@ export function PoolPanel({
   const { totalAssets, locked, free } = snap.pool;
   const utilWad = totalAssets === 0n ? 0n : (locked * 10n ** 18n) / totalAssets;
 
-  const c = () => contractsFor(walletFor(role));
-  const me = walletFor(role).address;
+  const c = () => contractsFor(actor!.signer);
+  const me = actor?.address ?? "";
 
   async function ensureAllowance(need: bigint) {
     const { usd } = c();
@@ -41,7 +41,7 @@ export function PoolPanel({
         <Stat label="Total assets" value={`${amount(totalAssets)} mUSD`} />
         <Stat label="Locked against policies" value={`${amount(locked)} mUSD`} />
         <Stat label="Free capacity" value={`${amount(free)} mUSD`} />
-        <Stat label="Your shares" value={amount(snap.shares[role.key])} />
+        <Stat label="Your shares" value={amount(snap.you?.shares)} />
       </div>
 
       <div className="meter" title={`Utilisation ${pctOfWad(utilWad)}`}>
@@ -59,7 +59,7 @@ export function PoolPanel({
           <input value={depositStr} onChange={(e) => setDepositStr(e.target.value)} />
         </label>
         <button
-          disabled={!!busy}
+          disabled={!!busy || !actor}
           onClick={() =>
             act("Deposit", async () => {
               const v = parseEther(depositStr || "0");
@@ -77,7 +77,7 @@ export function PoolPanel({
         </label>
         <button
           className="secondary"
-          disabled={!!busy}
+          disabled={!!busy || !actor}
           onClick={() =>
             act("Withdraw", async () =>
               c().pool.withdraw(parseEther(withdrawStr || "0"), me, me),

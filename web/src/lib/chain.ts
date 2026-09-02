@@ -1,10 +1,16 @@
-import { Contract, HDNodeWallet, JsonRpcProvider, type InterfaceAbi } from "ethers";
+import {
+  BrowserProvider, Contract, HDNodeWallet, JsonRpcProvider,
+  type InterfaceAbi, type Signer,
+} from "ethers";
 import deployment from "../generated/deployment.json";
 
 /**
  * Hardhat's well-known development mnemonic. These keys are published in
  * Hardhat's own documentation and hold nothing but local test funds — they are
- * here so the demo needs no wallet extension and no faucet.
+ * here so the local demo needs no wallet extension and no faucet.
+ *
+ * They are used ONLY in local mode. On Creditcoin every transaction is signed
+ * by the user's own wallet.
  */
 const HARDHAT_MNEMONIC =
   "test test test test test test test test test test test junk";
@@ -57,19 +63,75 @@ export function walletFor(role: Role): HDNodeWallet {
   return w;
 }
 
+/** Whoever is signing right now — a local test key, or the user's own wallet. */
+export interface Actor {
+  label: string;
+  address: string;
+  signer: Signer;
+}
+
+// --- injected wallet (live mode) ----------------------------------------
+
+interface Eip1193 {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+  on?(event: string, handler: (...args: unknown[]) => void): void;
+}
+
+export const injected = (): Eip1193 | undefined =>
+  (window as unknown as { ethereum?: Eip1193 }).ethereum;
+
+const hexChainId = `0x${deployment.chainId.toString(16)}`;
+
+/**
+ * Connects the user's wallet, adding or switching to the target network first.
+ * `wallet_addEthereumChain` is a no-op for a chain the wallet already knows, so
+ * asking to add before switching costs nothing and saves the user a manual step.
+ */
+export async function connectWallet(): Promise<Actor> {
+  const eth = injected();
+  if (!eth) throw new Error("No wallet found. Install MetaMask, or run the local demo.");
+
+  try {
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChainId }] });
+  } catch {
+    await eth.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: hexChainId,
+        chainName: deployment.label,
+        rpcUrls: [deployment.rpcUrl],
+        nativeCurrency: { name: "Testnet CTC", symbol: "tCTC", decimals: 18 },
+        blockExplorerUrls: deployment.explorer ? [deployment.explorer as string] : [],
+      }],
+    });
+  }
+
+  const browser = new BrowserProvider(eth as never);
+  const signer = await browser.getSigner();
+  const address = await signer.getAddress();
+  return { label: "your wallet", address, signer };
+}
+
+// --- contracts -----------------------------------------------------------
+
 const abi = (name: keyof typeof deployment.abis) =>
   deployment.abis[name] as unknown as InterfaceAbi;
 
-export function contractsFor(runner: HDNodeWallet | JsonRpcProvider) {
+export function contractsFor(runner: Signer | JsonRpcProvider) {
   const a = deployment.addresses;
   return {
     usd: new Contract(a.MockUSD, abi("MockUSD"), runner),
     pool: new Contract(a.CoverPool, abi("CoverPool"), runner),
     pm: new Contract(a.PolicyManager, abi("PolicyManager"), runner),
     verifier: new Contract(a.ClaimVerifier, abi("ClaimVerifier"), runner),
-    chainInfo: new Contract(a.MockChainInfo, abi("MockChainInfo"), runner),
+    chainInfo: new Contract(a.ChainInfo, abi("ChainInfo"), runner),
   };
 }
 
 /** Read-only handles, for anything that does not need a signature. */
 export const read = contractsFor(provider);
+
+export const explorerTx = (hash: string): string | null => {
+  const base = D.explorer as string;
+  return base ? `${base.replace(/\/$/, "")}/tx/${hash}` : null;
+};

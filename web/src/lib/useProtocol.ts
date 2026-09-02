@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Interface, type Contract } from "ethers";
-import { D, ROLES, read, walletFor, type Role, type RoleKey } from "./chain";
+import {
+  connectWallet, D, IS_LOCAL, ROLES, read, walletFor,
+  type Actor, type Role, type RoleKey,
+} from "./chain";
 
 /**
  * Every custom error the stack can throw, in one interface.
@@ -68,11 +71,18 @@ export interface LogLine {
   detail: string;
 }
 
+export interface Holding {
+  usd: bigint;
+  shares: bigint;
+}
+
 export interface Snapshot {
   pool: PoolState;
   policies: PolicyView[];
-  balances: Record<RoleKey, bigint>;
-  shares: Record<RoleKey, bigint>;
+  /** Local mode only — the four demo roles, so the switcher can show balances. */
+  roles: Record<RoleKey, Holding>;
+  /** Whoever is signing right now. Null before a wallet is connected. */
+  you: Holding | null;
   attestedHeight: bigint;
   events: LogLine[];
 }
@@ -116,14 +126,22 @@ async function loadEvents(): Promise<LogLine[]> {
   return out.sort((a, b) => b.block - a.block);
 }
 
-async function loadSnapshot(): Promise<Snapshot> {
+async function holdingOf(addr: string): Promise<Holding> {
+  const [usd, shares] = await Promise.all([
+    read.usd.balanceOf(addr) as Promise<bigint>,
+    read.pool.balanceOf(addr) as Promise<bigint>,
+  ]);
+  return { usd, shares };
+}
+
+async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
   const [totalAssets, locked, free, totalSupply, nextId, attested] = await Promise.all([
     read.pool.totalAssets() as Promise<bigint>,
     read.pool.lockedCapacity() as Promise<bigint>,
     read.pool.freeCapacity() as Promise<bigint>,
     read.pool.totalSupply() as Promise<bigint>,
     read.pm.nextPolicyId() as Promise<bigint>,
-    read.chainInfo.get_latest_attestation_height_and_hash(1) as Promise<{ height: bigint }>,
+    read.chainInfo.get_latest_attestation_height_and_hash(D.chainKey) as Promise<{ height: bigint }>,
   ]);
 
   const policies: PolicyView[] = [];
@@ -146,19 +164,16 @@ async function loadSnapshot(): Promise<Snapshot> {
     });
   }
 
-  const balances = {} as Record<RoleKey, bigint>;
-  const shares = {} as Record<RoleKey, bigint>;
-  for (const r of ROLES) {
-    const addr = walletFor(r).address;
-    balances[r.key] = await read.usd.balanceOf(addr);
-    shares[r.key] = await read.pool.balanceOf(addr);
+  const roles = {} as Record<RoleKey, Holding>;
+  if (IS_LOCAL) {
+    for (const r of ROLES) roles[r.key] = await holdingOf(walletFor(r).address);
   }
 
   return {
     pool: { totalAssets, locked, free, totalSupply },
     policies,
-    balances,
-    shares,
+    roles,
+    you: actor ? await holdingOf(actor.address) : null,
     attestedHeight: attested.height,
     events: await loadEvents(),
   };
@@ -167,6 +182,15 @@ async function loadSnapshot(): Promise<Snapshot> {
 export function useProtocol() {
   const [role, setRole] = useState<Role>(ROLES[1]); // open as the cover buyer
   const [snap, setSnap] = useState<Snapshot | null>(null);
+
+  /**
+   * Locally the actor follows the role switcher; on Creditcoin it is whatever
+   * wallet the user connected. Everything downstream only sees an Actor, so no
+   * component has to care which world it is in.
+   */
+  const [actor, setActor] = useState<Actor | null>(
+    IS_LOCAL ? { label: ROLES[1].label, address: walletFor(ROLES[1]).address, signer: walletFor(ROLES[1]) } : null,
+  );
   const [busy, setBusy] = useState<string | null>(null);
 
   // Two independent failures, deliberately kept apart. The background poll
@@ -178,7 +202,7 @@ export function useProtocol() {
 
   const refresh = useCallback(async () => {
     try {
-      setSnap(await loadSnapshot());
+      setSnap(await loadSnapshot(actor));
       setConnError(null);
     } catch (e) {
       setConnError(
@@ -186,7 +210,7 @@ export function useProtocol() {
         `(npm run node, then npm run deploy:local)  —  ${(e as Error).message}`,
       );
     }
-  }, []);
+  }, [actor]);
 
   useEffect(() => {
     void refresh();
@@ -218,8 +242,22 @@ export function useProtocol() {
     [refresh],
   );
 
+  const chooseRole = useCallback((r: Role) => {
+    setRole(r);
+    setActor({ label: r.label, address: walletFor(r).address, signer: walletFor(r) });
+  }, []);
+
+  const connect = useCallback(async () => {
+    try {
+      setActor(await connectWallet());
+      setActionError(null);
+    } catch (e) {
+      setActionError((e as Error).message);
+    }
+  }, []);
+
   return {
-    role, setRole, snap, refresh, act, busy,
+    role, setRole: chooseRole, actor, connect, snap, refresh, act, busy,
     connError, actionError, dismissActionError: () => setActionError(null),
   };
 }

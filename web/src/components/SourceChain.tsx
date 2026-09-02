@@ -1,4 +1,4 @@
-import { contractsFor, D, IS_LOCAL, walletFor, type Role } from "../lib/chain";
+import { contractsFor, D, IS_LOCAL, type Actor } from "../lib/chain";
 import type { Snapshot } from "../lib/useProtocol";
 
 /**
@@ -11,10 +11,10 @@ import type { Snapshot } from "../lib/useProtocol";
  * by lying about it.
  */
 export function SourceChain({
-  snap, role, act, busy,
+  snap, actor, act, busy,
 }: {
   snap: Snapshot;
-  role: Role;
+  actor: Actor | null;
   act: (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
   busy: string | null;
 }) {
@@ -35,11 +35,11 @@ export function SourceChain({
         </div>
         <button
           className="secondary"
-          disabled={!!busy}
+          disabled={!!busy || !actor}
           onClick={() =>
             act("Advance attested height", async () =>
-              contractsFor(walletFor(role)).chainInfo.setLatest(
-                1, snap.attestedHeight + 200_000n, true,
+              contractsFor(actor!.signer).chainInfo.setLatest(
+                D.chainKey, snap.attestedHeight + 200_000n, true,
               ),
             )
           }

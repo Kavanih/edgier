@@ -4,6 +4,25 @@
 
 Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail) — DeFi track.
 
+## Try it in two minutes
+
+No wallet, no faucet, no testnet funds:
+
+```bash
+npm install
+npm run build
+npm run node          # terminal 1: local chain
+npm run demo:local    # terminal 2: deploy the stack + seed two live policies
+npm run web           # terminal 3: http://localhost:5173
+```
+
+Then switch to the **Stranger** — who holds no policy and has no approval — and
+settle someone else's claim. That is the whole thesis in one click.
+
+The local stack mocks the Attestcoin precompiles, and the UI says so in bright
+purple at the top of the page. For the real thing against Creditcoin's live
+`BlockProver`, see [docs/TESTNET.md](docs/TESTNET.md).
+
 ---
 
 ## The problem
@@ -51,12 +70,15 @@ risk on Ethereum.
   DemoVault                             PolicyManager  (writes cover)
     ├ upgradeTo(address)  ──┐           ClaimVerifier  (settles)
     ├ pause()             ──┤                 │
-    └ transfer(a,uint256) ──┤                 │ verifySingle()
+    └ transfer(a,uint256) ──┤                 │ verify()
                             │                 ▼
                             │        BlockProver precompile 0x…0FD2
                             │                 ▲
                             └── watcher ──────┘
                                 (@gluwa/usc-sdk, untrusted)
+
+  web/  — React UI over the same contracts. Runs against the local mocked
+          stack or, after `npm run deploy:creditcoin`, against the live network.
 ```
 
 **The watcher cannot forge a payout** — the proof is checked on-chain. **It cannot withhold
@@ -100,22 +122,20 @@ is not. See `docs/TRIGGERS.md`.
 
 ```bash
 npm install
-cp .env.example .env      # fill in RPC URLs and testnet keys
-npm run preflight         # what can Creditcoin actually prove right now?
 npm run build
-npm test                  # settlement logic, Attestcoin mocked
+npm test                  # settlement logic, Attestcoin mocked — 20 tests
 ```
 
-Deploy:
+Going live on testnet — faucets, keys, deploy, the live claim — is a guide of its
+own: **[docs/TESTNET.md](docs/TESTNET.md)**. The short version:
 
 ```bash
+cp .env.example .env        # throwaway keys; tCTC from the Creditcoin Discord faucet
+npm run preflight           # what can Creditcoin actually prove right now?
+npm run verify:live         # read path against the live precompiles — no funds needed
 npm run deploy:sepolia      # DemoVault  -> copy address into .env
-npm run deploy:creditcoin   # pool + policies + verifier -> copy addresses into .env
-```
-
-Run the demo:
-
-```bash
+npm run deploy:creditcoin   # pool + policies + verifier, wired to the REAL precompiles
+npm run web                 # the UI now points at the live network
 npm run watch               # terminal 1: watcher
 npm run trigger:demo        # terminal 2: rug the vault on Sepolia
 ```
@@ -155,7 +175,7 @@ The read path is **verified against the live Creditcoin testnet**, not mocked.
 npm run preflight        # what can Creditcoin prove right now?
 npm run verify:live      # full proof pipeline against the live precompiles
 npm run verify:trigger   # real TriggerLib vs a real proven Sepolia transaction
-npm test                 # settlement logic, precompiles mocked
+npm test                 # settlement logic, precompiles mocked — 20 tests
 ```
 
 `verify:live` picks a recent attested Sepolia transaction, fetches its proof, calls
@@ -175,22 +195,49 @@ through Attestcoin, and runs the actual `TriggerLib` against the genuinely decod
 confirming it fires on the right threshold, ignores the wrong direction, ignores the wrong
 trigger kind, and refuses a `status=0` receipt.
 
+The network constants are confirmed too, not copied from a blog post. Creditcoin CC3
+Testnet's EVM chain id is **102031**, taken from the live RPC and cross-checked against the
+docs' environment table, and pinned in `hardhat.config.ts`:
+
+```
+$ curl -s -X POST https://rpc.cc3-testnet.creditcoin.network \
+    -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
+{"jsonrpc":"2.0","id":1,"result":"0x18e8f"}     # 102031
+```
+
 ### Not yet verified
 
 **A state-changing `submitClaim` on Creditcoin testnet.** This needs funded testnet keys and
 is the one remaining unknown. Everything it depends on — proof structs, precompile ABI,
-decoder ABI, trigger logic — is now confirmed against the live network, so what is left is
-deployment and gas, not encoding.
+decoder ABI, trigger logic, chain id — is confirmed against the live network, so what is
+left is deployment and gas, not encoding. `docs/TESTNET.md` is the runbook.
 
 ## Known gaps (honest list)
 
-1. **Premium pricing is crude** — a flat annualised rate per trigger kind. A judge will ask;
-   utilisation-based pricing is the answer. See `docs/PRICING.md`.
-2. **No frontend yet.** The demo currently runs from the terminal.
-3. **`LARGE_OUTFLOW` only sees ERC-20 `Transfer` logs.** Native ETH movements emit no log and
+1. **`LARGE_OUTFLOW` only sees ERC-20 `Transfer` logs.** Native ETH movements emit no log and
    would need a calldata or trace-based path.
-4. **Batch claims are unimplemented.** The precompile's batch `verify` takes up to 10 proofs
-   sharing one continuity proof, which would make multi-transaction incidents much cheaper.
+2. **Pricing sees capacity, not concentration.** The utilisation curve prices the last of
+   the pool correctly, but selling `ADMIN_UPGRADE` cover on twenty protocols behind one
+   multisig is *one* risk, not twenty, and nothing here notices. Correlation limits and
+   per-target risk are the next step — `docs/PRICING.md` is explicit about what is missing
+   and why (real pricing needs loss data nobody has).
+3. **The local demo mocks the precompile.** `MockBlockProver` returns `true` for everything,
+   which is the point — it isolates the settlement logic — but it means the local UI proves
+   nothing. The page says so in a banner rather than quietly implying otherwise.
+4. **One shared premium curve for every trigger kind.** Only the base rate varies by kind;
+   the slope and kink are global.
+
+## What was built here
+
+- **Utilisation-priced premiums.** A kinked Aave-shaped curve, measured *after* reserving the
+  policy's cover, so the buyer taking the last of the capacity pays for taking it. `buyPolicy`
+  carries a `maxPremium` slippage guard, because the quote now moves with pool state.
+- **Batched settlement.** `submitClaimBatch` settles up to 10 policies against one shared
+  continuity proof — the exact shape the precompile's batch `verify` overload exists for.
+  One incident hitting several insured contracts costs one continuity verification, not N.
+- **A web UI** over the whole loop, runnable with no faucet against a local mocked stack, and
+  against the live network after `npm run deploy:creditcoin`.
 
 ### Bugs found and fixed while building
 
@@ -203,6 +250,16 @@ deployment and gas, not encoding.
 - **`PolicyManager.expire` trusted a caller-supplied source-chain height**, letting anyone
   free an underwriter's locked capital by lying. It now reads
   `get_latest_attestation_height_and_hash` from the ChainInfo precompile.
+- **The watcher's hand-written policy ABI said `uint32 chainKey`** where the contract says
+  `uint64`. Harmless at chainKey 1, wrong everywhere.
+- **ethers caches nonces for ~250ms**, so the UI's approve-then-buy sent two transactions
+  with the same nonce and the second was rejected. The frontend disables that cache.
+- **The UI's background poll was clearing revert messages** four seconds after they appeared.
+  Connection errors and action errors are now separate state, because those revert
+  names — `TriggerNotMet`, `OutsideCoverageWindow` — *are* the demo.
+- **ethers only populates `error.revert` for static calls.** On a real send the revert data
+  hides in `error.data` or under `error.info.error.data`, so the UI showed
+  "unknown custom error" instead of naming the failure. It now checks all of them.
 
 ## Layout
 
@@ -211,6 +268,11 @@ contracts/creditcoin/   CoverPool, PolicyManager, ClaimVerifier, TriggerLib
 contracts/sepolia/      DemoVault — the insured contract
 contracts/mocks/        Attestcoin stand-ins for local tests
 watcher/                @gluwa/usc-sdk proof pipeline
-scripts/                deploy + fire-the-exploit
-test/                   settlement logic
+web/                    React UI — local mocked stack or the live network
+scripts/                deploy (local / Sepolia / Creditcoin) + fire-the-exploit
+test/                   settlement logic — 20 tests
+docs/TESTNET.md         faucets, keys, deploy, the live claim
+docs/TRIGGERS.md        what a proof gives you, and what it cannot
+docs/PRICING.md         the utilisation curve, and what real pricing still needs
+docs/DEMO.md            the recording script
 ```

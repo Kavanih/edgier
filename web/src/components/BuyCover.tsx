@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { parseEther } from "ethers";
-import { contractsFor, D, read, walletFor, type Role } from "../lib/chain";
+import { contractsFor, D, read, type Actor } from "../lib/chain";
 import { amount, bpsPct, pctOfWad } from "../lib/format";
 import { Kind, KINDS } from "../lib/triggers";
 import type { Snapshot } from "../lib/useProtocol";
@@ -12,10 +12,10 @@ interface Quote {
 }
 
 export function BuyCover({
-  snap, role, act, busy,
+  snap, actor, act, busy,
 }: {
   snap: Snapshot;
-  role: Role;
+  actor: Actor | null;
   act: (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
   busy: string | null;
 }) {
@@ -55,10 +55,10 @@ export function BuyCover({
 
   const spec = KINDS.find((k) => k.kind === kind)!;
   const overCapacity = cover > snap.pool.free;
-  const me = walletFor(role).address;
+  const me = actor?.address ?? "";
 
   async function buy() {
-    const c = contractsFor(walletFor(role));
+    const c = contractsFor(actor!.signer);
     const premium = (await read.pm.quote(kind, cover, blocks)) as bigint;
     // Slippage guard: the quote moves with utilisation, so accept up to 1% more.
     const maxPremium = (premium * 101n) / 100n;
@@ -69,7 +69,7 @@ export function BuyCover({
     }
 
     return c.pm.buyPolicy(
-      { chainKey: 1, target, kind, threshold: kind === Kind.LARGE_OUTFLOW ? safeParse(thresholdStr) : 0n },
+      { chainKey: D.chainKey, target, kind, threshold: kind === Kind.LARGE_OUTFLOW ? safeParse(thresholdStr) : 0n },
       cover,
       start,
       end,
@@ -157,8 +157,11 @@ export function BuyCover({
         </p>
       )}
 
-      <button disabled={!!busy || !quote || overCapacity} onClick={() => act("Buy policy", buy)}>
-        Buy this policy as {role.label}
+      <button
+        disabled={!!busy || !quote || overCapacity || !actor}
+        onClick={() => act("Buy policy", buy)}
+      >
+        {actor ? `Buy this policy as ${actor.label}` : "Connect a wallet to buy"}
       </button>
     </section>
   );

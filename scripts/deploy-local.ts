@@ -1,6 +1,10 @@
 import { ethers, artifacts } from "hardhat";
+import type { BaseContract, Signer } from "ethers";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+
+/** ethers v6 widens `.connect()` to BaseContract; this keeps the typed surface. */
+const as = <T extends BaseContract>(c: T, signer: Signer): T => c.connect(signer) as T;
 
 /**
  * Stands the whole product up on a local Hardhat node, with the Attestcoin
@@ -22,7 +26,16 @@ const OUT = resolve(__dirname, "../web/src/generated/deployment.json");
 /** Source-chain height the mock ChainInfo starts out attesting. */
 const START_ATTESTED = 8_000_000;
 
-const CONTRACTS = ["CoverPool", "PolicyManager", "ClaimVerifier", "MockUSD", "MockChainInfo"];
+/** Frontend ABI name -> artifact to read it from. */
+const ABI_SOURCES: Record<string, string> = {
+  CoverPool: "CoverPool",
+  PolicyManager: "PolicyManager",
+  ClaimVerifier: "ClaimVerifier",
+  MockUSD: "MockUSD",
+  // Locally the mock stands in for the ChainInfo precompile, and adds setLatest
+  // so the demo can fast-forward the source chain.
+  ChainInfo: "MockChainInfo",
+};
 
 async function main() {
   const [deployer, underwriter, buyer, stranger] = await ethers.getSigners();
@@ -62,17 +75,17 @@ async function main() {
   await (await usd.mint(buyer.address, ethers.parseEther("50000"))).wait();
   await (await usd.mint(stranger.address, ethers.parseEther("1000"))).wait();
 
-  await (await usd.connect(underwriter).approve(poolAddr, ethers.MaxUint256)).wait();
-  await (await usd.connect(buyer).approve(poolAddr, ethers.MaxUint256)).wait();
+  await (await as(usd, underwriter).approve(poolAddr, ethers.MaxUint256)).wait();
+  await (await as(usd, buyer).approve(poolAddr, ethers.MaxUint256)).wait();
 
-  await (await pool.connect(underwriter).deposit(
+  await (await as(pool, underwriter).deposit(
     ethers.parseEther("100000"), underwriter.address,
   )).wait();
 
   // --- hand the frontend everything it needs ----------------------------
   const abis: Record<string, unknown> = {};
-  for (const name of CONTRACTS) {
-    abis[name] = (await artifacts.readArtifact(name)).abi;
+  for (const [key, artifact] of Object.entries(ABI_SOURCES)) {
+    abis[key] = (await artifacts.readArtifact(artifact)).abi;
   }
 
   const deployment = {
@@ -80,14 +93,16 @@ async function main() {
     label: "Local Hardhat — Attestcoin precompiles MOCKED",
     chainId: Number(net.chainId),
     rpcUrl: "http://127.0.0.1:8545",
-    explorer: null as string | null,
+    explorer: "",
+    /** Attestcoin source-chain id the policies are written against. */
+    chainKey: 1,
     startAttestedHeight: START_ATTESTED,
     addresses: {
       MockUSD: await usd.getAddress(),
       CoverPool: poolAddr,
       PolicyManager: await pm.getAddress(),
       ClaimVerifier: await verifier.getAddress(),
-      MockChainInfo: await chainInfo.getAddress(),
+      ChainInfo: await chainInfo.getAddress(),
       // The contract on Ethereum a demo policy is written against. Locally there
       // is no such contract, so this is only ever used as a trigger `target`.
       InsuredContract: "0x00000000000000000000000000000000000000A1",

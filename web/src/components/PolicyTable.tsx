@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { contractsFor, walletFor, type Role } from "../lib/chain";
+import { contractsFor, type Actor } from "../lib/chain";
 import { amount, short, STATUS } from "../lib/format";
 import {
   buildProvenBlob, EMPTY_CONTINUITY, EMPTY_MERKLE, Kind, kindLabel, lossLog,
@@ -11,10 +11,10 @@ type Act = (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) 
 const ACTIVE = 1;
 
 export function PolicyTable({
-  snap, role, act, busy,
+  snap, actor, act, busy,
 }: {
   snap: Snapshot;
-  role: Role;
+  actor: Actor | null;
   act: Act;
   busy: string | null;
 }) {
@@ -74,7 +74,7 @@ export function PolicyTable({
         <SettlePanel
           policy={snap.policies.find((p) => p.id === open)!}
           snap={snap}
-          role={role}
+          actor={actor}
           act={act}
           busy={busy}
         />
@@ -92,10 +92,10 @@ export function PolicyTable({
           </p>
           <button
             className="secondary"
-            disabled={!!busy}
+            disabled={!!busy || !actor}
             onClick={() =>
               act(`Batch-settle ${active.length} policies`, async () => {
-                const c = contractsFor(walletFor(role));
+                const c = contractsFor(actor!.signer);
                 const ids = active.map((p) => p.id);
                 const heights = active.map((p) => p.startBlock + 1n);
                 const blobs = active.map((p) =>
@@ -120,11 +120,11 @@ export function PolicyTable({
 }
 
 function SettlePanel({
-  policy, snap, role, act, busy,
+  policy, snap, actor, act, busy,
 }: {
   policy: PolicyView;
   snap: Snapshot;
-  role: Role;
+  actor: Actor | null;
   act: Act;
   busy: string | null;
 }) {
@@ -132,14 +132,15 @@ function SettlePanel({
   const [heightStr, setHeightStr] = useState((policy.startBlock + 1n).toString());
   const kind = Number(policy.trigger.kind) as Kind;
   const canExpire = snap.attestedHeight > policy.endBlock;
-  const holderIsMe = policy.holder.toLowerCase() === walletFor(role).address.toLowerCase();
+  const holderIsMe =
+    !!actor && policy.holder.toLowerCase() === actor.address.toLowerCase();
 
   function height(): bigint {
     try { return BigInt(heightStr || "0"); } catch { return 0n; }
   }
 
   async function submit() {
-    const c = contractsFor(walletFor(role));
+    const c = contractsFor(actor!.signer);
     const blob = buildProvenBlob({
       to: policy.trigger.target,
       status: succeeded ? 1 : 0,
@@ -153,9 +154,11 @@ function SettlePanel({
       <h3>Settle policy #{policy.id.toString()}</h3>
 
       <p className={holderIsMe ? "muted" : "punchline"}>
-        {holderIsMe
-          ? `You are the policyholder. That is the ordinary case.`
-          : `You are the ${role.label}. You do not hold this policy and nobody has approved
+        {!actor
+          ? "Connect a wallet to submit a claim."
+          : holderIsMe
+          ? "You are the policyholder. That is the ordinary case."
+          : `You are the ${actor.label}. You do not hold this policy and nobody has approved
              you. Submit anyway — the proof is what settles it, not your identity.`}
       </p>
 
@@ -187,16 +190,19 @@ function SettlePanel({
       </p>
 
       <div className="row">
-        <button disabled={!!busy} onClick={() => act(`Settle #${policy.id}`, submit)}>
-          Submit claim as {role.label}
+        <button
+          disabled={!!busy || !actor}
+          onClick={() => act(`Settle #${policy.id}`, submit)}
+        >
+          {actor ? `Submit claim as ${actor.label}` : "Connect a wallet"}
         </button>
         <button
           className="secondary"
-          disabled={!!busy || !canExpire}
+          disabled={!!busy || !canExpire || !actor}
           title={canExpire ? "" : "The attested source-chain height has not passed the window yet"}
           onClick={() =>
             act(`Expire #${policy.id}`, async () =>
-              contractsFor(walletFor(role)).pm.expire(policy.id),
+              contractsFor(actor!.signer).pm.expire(policy.id),
             )
           }
         >

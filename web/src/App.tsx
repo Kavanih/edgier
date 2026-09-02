@@ -8,12 +8,14 @@ import { useProtocol } from "./lib/useProtocol";
 import { D } from "./lib/chain";
 
 export default function App() {
-  const { role, setRole, snap, act, busy, connError, actionError, dismissActionError } =
-    useProtocol();
+  const {
+    role, setRole, actor, connect, snap, act, busy,
+    connError, actionError, dismissActionError,
+  } = useProtocol();
 
   return (
     <div className="app">
-      <Header role={role} setRole={setRole} snap={snap} />
+      <Header role={role} setRole={setRole} actor={actor} connect={connect} snap={snap} />
 
       {connError && <div className="error">{connError}</div>}
       {actionError && (
@@ -27,10 +29,10 @@ export default function App() {
 
       {snap && (
         <main>
-          <PoolPanel snap={snap} role={role} act={act} busy={busy} />
-          <BuyCover snap={snap} role={role} act={act} busy={busy} />
-          <PolicyTable snap={snap} role={role} act={act} busy={busy} />
-          <SourceChain snap={snap} role={role} act={act} busy={busy} />
+          <PoolPanel snap={snap} actor={actor} act={act} busy={busy} />
+          <BuyCover snap={snap} actor={actor} act={act} busy={busy} />
+          <PolicyTable snap={snap} actor={actor} act={act} busy={busy} />
+          <SourceChain snap={snap} actor={actor} act={act} busy={busy} />
           <EventLog snap={snap} />
         </main>
       )}

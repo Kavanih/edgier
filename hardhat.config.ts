@@ -26,10 +26,9 @@ const config: HardhatUserConfig = {
     cc3testnet: {
       url: process.env.CC3_TESTNET_RPC_URL ?? "https://rpc.cc3-testnet.creditcoin.network",
       accounts,
-      // NOTE: confirm the EVM chainId from the RPC before pinning it here.
-      //   curl -s -X POST $CC3_TESTNET_RPC_URL \
-      //     -H 'content-type: application/json' \
-      //     -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
+      // Confirmed against the live RPC (eth_chainId -> 0x18e8f) and the
+      // Creditcoin docs' Testnet environment table.
+      chainId: 102031,
     },
   },
   paths: {

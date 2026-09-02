@@ -185,3 +185,8 @@ footer p { margin: 0 0 6px; color: var(--muted); font-size: 12.5px; }
   .log li { grid-template-columns: 44px 1fr; }
   .log-src, .log-detail { display: none; }
 }
+
+.notice-live { background: #0f2018; border-color: #1d5c40; color: #bfe6d2; }
+.notice-live strong { color: var(--good); }
+.connect { margin: 20px 0 0; }
+.connect .hint { margin-top: 10px; }

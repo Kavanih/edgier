@@ -3,14 +3,15 @@
   "label": "Local Hardhat — Attestcoin precompiles MOCKED",
   "chainId": 31337,
   "rpcUrl": "http://127.0.0.1:8545",
-  "explorer": null,
+  "explorer": "",
+  "chainKey": 1,
   "startAttestedHeight": 8000000,
   "addresses": {
-    "MockUSD": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
-    "CoverPool": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
-    "PolicyManager": "0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690",
-    "ClaimVerifier": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
-    "MockChainInfo": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+    "MockUSD": "0x998abeb3E57409262aE5b751f60747921B33613E",
+    "CoverPool": "0x0E801D84Fa97b50751Dbf25036d067dCf18858bF",
+    "PolicyManager": "0x8f86403A4DE0BB5791fa46B8e795C547942fE4Cf",
+    "ClaimVerifier": "0x9d4454B023096f34B160D6B654540c56A1F81688",
+    "ChainInfo": "0x70e0bA845a1A0F2DA3359C97E0285013525FFC49",
     "InsuredContract": "0x00000000000000000000000000000000000000A1"
   },
   "abis": {
@@ -2655,7 +2656,7 @@
         "type": "function"
       }
     ],
-    "MockChainInfo": [
+    "ChainInfo": [
       {
         "inputs": [
           {
