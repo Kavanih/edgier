@@ -19,6 +19,9 @@ npm run web           # terminal 3: http://localhost:5173
 Then switch to the **Stranger** — who holds no policy and has no approval — and
 settle someone else's claim. That is the whole thesis in one click.
 
+Re-running `npm run demo:local` deploys fresh contracts, so reload the browser
+afterwards — the dev server holds the previous addresses until you do.
+
 The local stack mocks the Attestcoin precompiles, and the UI says so in bright
 purple at the top of the page. For the real thing against Creditcoin's live
 `BlockProver`, see [docs/TESTNET.md](docs/TESTNET.md).
