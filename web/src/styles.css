@@ -390,7 +390,8 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .orbit-node.active { transform: translate(-50%, -50%) scale(1.12); box-shadow: 5px 5px 0 var(--accent); z-index: 2; }
 .orbit-node.active .orbit-n { background: var(--accent); animation: pulse 1.6s ease-out infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 #d9530b66; } 100% { box-shadow: 0 0 0 14px #d9530b00; } }
-.orbit-center { position: absolute; left: 50%; top: 50%; width: min(420px, 50%); transform: translate(-50%, -50%); text-align: center; animation: fade .35s ease-out; }
+.orbit-center { position: absolute; left: 50%; top: 50%; width: min(420px, 50%); transform: translate(-50%, -50%); text-align: center; animation: centerIn .35s ease-out both; }
+@keyframes centerIn { from { opacity: 0; transform: translate(-50%, -50%) translateY(8px); } to { opacity: 1; transform: translate(-50%, -50%); } }
 .orbit-center h3 { font-size: clamp(16px, 1.6vw, 24px); margin: 10px 0 8px; }
 .orbit-center p { color: var(--text-2); font-size: clamp(12px, 1vw, 14.5px); margin: 0; }
 .orbit-dots { display: flex; gap: 6px; justify-content: center; margin-top: 14px; }
