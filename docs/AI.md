@@ -1,4 +1,4 @@
-# AI in Nullvote
+# AI in Edgier
 
 ## The rule
 

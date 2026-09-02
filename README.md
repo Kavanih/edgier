@@ -1,8 +1,8 @@
-# Nullvote
+# Edgier
 
 **On-chain insurance where the claim is a proof, not a vote.**
 
-Zero votes between you and your payout. Cover for DeFi protocols on Ethereum, underwritten on Creditcoin, settled by an Attestcoin inclusion proof — no committee, no claims assessor, no one who can say no.
+The edge is the proof. Zero votes between you and your payout. Cover for DeFi protocols on Ethereum, underwritten on Creditcoin, settled by an Attestcoin inclusion proof — no committee, no claims assessor, no one who can say no.
 
 Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail) — DeFi track.
 
@@ -60,7 +60,7 @@ the trustless settlement path *is* the product.
 
 There is a second argument, and it is the Creditcoin docs' own architecture: the risk lives
 on Ethereum where gas is expensive, but underwriting capital wants to sit somewhere cheap.
-The docs say keep source-chain logic minimal and business logic on Creditcoin. Nullvote
+The docs say keep source-chain logic minimal and business logic on Creditcoin. Edgier
 is that guidance applied to a real business — pool, policies and settlement on Creditcoin,
 risk on Ethereum.
 

@@ -34,7 +34,7 @@ contract CoverPool is ERC4626, Ownable {
     }
 
     constructor(IERC20 asset_, address owner_)
-        ERC20("Nullvote Pool Share", "nvSHARE")
+        ERC20("Edgier Pool Share", "EDGR")
         ERC4626(asset_)
         Ownable(owner_)
     {}

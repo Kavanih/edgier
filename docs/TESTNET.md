@@ -18,7 +18,7 @@ Everything below uses **testnets only**. Nothing here touches real money.
 
 ## The two networks
 
-Nullvote straddles two chains, and you need funds on both.
+Edgier straddles two chains, and you need funds on both.
 
 | | Creditcoin CC3 Testnet | Ethereum Sepolia |
 |---|---|---|

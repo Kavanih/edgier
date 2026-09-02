@@ -14,7 +14,7 @@ export function TopBar({
 }) {
   return (
     <nav className="topbar">
-      <div className="brand" title="zero votes between you and your payout">nullvote<span className="brand-cursor">_</span></div>
+      <div className="brand" title="the edge is the proof — zero votes between you and your payout">edgier<span className="brand-cursor">_</span></div>
 
       {IS_LOCAL ? (
         <div className="seg" role="tablist">

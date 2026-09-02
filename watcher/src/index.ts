@@ -3,7 +3,7 @@ import { config, LOSS_SELECTORS } from "./config";
 import { ProofClient } from "./proof";
 
 /**
- * Nullvote watcher.
+ * Edgier watcher.
  *
  * Scans Ethereum for transactions addressed to an insured contract that carry a
  * loss-event selector, proves them via Attestcoin, and submits the claim on

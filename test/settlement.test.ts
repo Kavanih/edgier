@@ -9,11 +9,11 @@ const as = <T extends BaseContract>(c: T, signer: Signer): T => c.connect(signer
 /**
  * Covers the settlement path with the Attestcoin precompile mocked.
  *
- * What is asserted here is the part Nullvote owns: that a policy pays out
+ * What is asserted here is the part Edgier owns: that a policy pays out
  * exactly when a *successful* proven transaction emitted the insured event, and
  * never otherwise.
  */
-describe("Nullvote settlement", () => {
+describe("Edgier settlement", () => {
   const COVER = ethers.parseEther("1000");
   const SEPOLIA_CHAINKEY = 1;
   const INSURED = "0x00000000000000000000000000000000000000A1";

@@ -3,7 +3,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 /**
- * Nullvote AI sidecar.
+ * Edgier AI sidecar.
  *
  * A thin, key-holding proxy in front of OpenRouter. It exists for two reasons:
  *
@@ -98,7 +98,7 @@ async function complete(system: string, user: string): Promise<{ text: string; m
       headers: {
         Authorization: `Bearer ${KEY}`,
         "content-type": "application/json",
-        "X-Title": "Nullvote",
+        "X-Title": "Edgier",
       },
       body: JSON.stringify({
         model,
@@ -137,7 +137,7 @@ function extractJson(text: string): unknown {
 
 // --- prompts --------------------------------------------------------------
 
-const PRINCIPLE = `You are an analyst inside Nullvote, an on-chain insurance protocol on Creditcoin where claims are settled by cryptographic proof instead of a vote.
+const PRINCIPLE = `You are an analyst inside Edgier, an on-chain insurance protocol on Creditcoin where claims are settled by cryptographic proof instead of a vote.
 You INFORM. You never DECIDE. Payouts are settled on-chain only when the Attestcoin BlockProver
 precompile verifies a cryptographic proof that a transaction was included in an Ethereum block.
 Nothing you say can cause or prevent a payout. Reason strictly from the data you are given;
@@ -147,7 +147,7 @@ Answer with a single JSON object and nothing else.`;
 const DRAFT_SYSTEM = `${PRINCIPLE}
 
 Task: turn a protocol owner's plain-English description of what they want covered into a
-policy draft. Nullvote can ONLY insure precisely-defined on-chain events that appear in
+policy draft. Edgier can ONLY insure precisely-defined on-chain events that appear in
 a transaction's event logs. The available trigger kinds are:
   0 ADMIN_UPGRADE   — EIP-1967 Upgraded(address) or OwnershipTransferred(address,address) emitted by the insured contract
   1 EMERGENCY_PAUSE — OpenZeppelin Paused(address) emitted by the insured contract
