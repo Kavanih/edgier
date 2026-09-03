@@ -64,7 +64,7 @@ Creditcoin's testnet faucet is a **Discord bot**, not a website.
 
 Source: [Using Testnet Faucet](https://docs.creditcoin.org/wallets/using-testnet-faucet.md).
 
-## Step 2 — get SepoliaETH
+## Step 2 — (optional) get SepoliaETH
 
 Sepolia faucets come and go, and most now rate-limit by account age. The ones
 that usually work:
@@ -73,9 +73,8 @@ that usually work:
 - **Alchemy** — https://sepoliafaucet.com (free Alchemy account required)
 - **Infura** — https://www.infura.io/faucet/sepolia
 
-You need very little — a deploy plus a handful of transactions. If every faucet
-refuses you, see *Plan B* at the bottom: you can demo against Ethereum **mainnet
-history** without spending anything at all.
+Only needed if you want to watch a Sepolia contract (`CHAIN_KEY=1`). The shipped
+demo proves Ethereum **mainnet** history (`CHAIN_KEY=3`) and needs no Sepolia funds.
 
 ## Step 3 — fill in `.env`
 
@@ -84,12 +83,12 @@ cp .env.example .env
 ```
 
 ```bash
-SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com
 CC3_TESTNET_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
 PROOF_BUILDER_URL=https://prover.cc3-testnet.creditcoin.network
 
 # 1 = Ethereum Sepolia, 3 = Ethereum Mainnet (as seen from CC3 Testnet)
-CHAIN_KEY=1
+CHAIN_KEY=3
 
 DEPLOYER_PRIVATE_KEY=0x...
 WATCHER_PRIVATE_KEY=0x...
@@ -121,7 +120,6 @@ what remains is only gas.
 ## Step 6 — deploy
 
 ```bash
-npm run deploy:sepolia      # DemoVault -> paste VULNERABLE_VAULT_ADDRESS into .env
 npm run deploy:creditcoin   # pool + policies + verifier, wired to the REAL precompiles
 ```
 
@@ -135,15 +133,15 @@ now opens the UI against the live network. The banner turns green, the role
 switcher is replaced by **Connect wallet**, and every transaction is signed by
 your own wallet on chain 102031.
 
-## Step 7 — the live claim
+## Step 7 — the live claims
 
 ```bash
-npm run watch          # terminal 1: the watcher
-npm run trigger:demo   # terminal 2: rug the vault on Sepolia
+npm run settle:mainnet   # five real mainnet exploits, proven and settled
 ```
 
-The watcher waits for Creditcoin to attest the source block, fetches the proof,
-and submits the claim.
+For a *new* loss on a contract you watch, set `INSURED_CONTRACT_ADDRESS` and run
+`npm run watch`: it waits for Creditcoin to attest the source block, fetches the proof,
+dry-runs `checkClaim`, and submits.
 
 **Budget for the wait.** Attestation is periodic, not instant —
 `waitUntilHeightAttested` polls and gives up after about fifteen minutes. Do not
@@ -155,26 +153,21 @@ You can also settle from the UI: open the policy, and submit. Because
 
 ---
 
-## Plan B — prove a real mainnet incident instead
+## Mainnet history — what the shipped demo does
 
 Ethereum **Mainnet** is a supported source chain from Creditcoin **testnet**
 (`chainKey 3`), and its attestation genesis is block **0**. The entire history of
 Ethereum mainnet is provable from a testnet deployment.
 
-That means you can point a policy at a *real protocol* and settle against a
-*real historical exploit transaction* — no Sepolia funds, no staged vault.
+`scripts/incidents.ts` lists five real exploits — Ronin, Euler, Harmony Horizon,
+Nomad, Poly Network — each with the exploited contract, the exploit transaction
+and a threshold in the token's own units. `npm run settle:mainnet` writes a policy
+on each, fetches the proof, dry-runs `checkClaim`, and settles. Adding an incident
+is adding a row; the trigger signatures are EVM standards, so no contract changes.
 
-```bash
-CHAIN_KEY=3 npm run preflight   # confirm the range on camera
-```
-
-Then write the policy's window around the real incident's block number and
-target the real contract address. The trigger signatures are ecosystem standards
-(EIP-1967 `Upgraded`, OpenZeppelin `Paused`, ERC-20 `Transfer`), so they match
-real protocols with no changes.
-
-This is the strongest version of the demo. It is also the one that needs the
-least money.
+Finding candidates: look for an ERC-20 `Transfer` whose `from` is the exploited
+contract. `eth_getLogs` over historical ranges is refused by some public RPCs
+(publicnode returns 403); `eth.drpc.org` and `mainnet.gateway.tenderly.co` serve it.
 
 ---
 
@@ -185,5 +178,5 @@ least money.
 | `nonce has already been used` | two transactions sent inside ~250ms; the UI disables ethers' RPC cache, scripts should `await tx.wait()` |
 | `Unknown selector` from the precompile | calling `verifySingle` — that name only exists in the SDK's TypeScript wrapper. The precompile's method is the overloaded `verify(...)`, and `chainKey` is `uint64` |
 | deploy reverts with no reason | out of tCTC — re-run the Discord faucet |
-| watcher never submits | the source block is not attested yet, or is below the attestation genesis. Check `npm run preflight` |
+| watcher never submits | the source block is not attested yet. Check `npm run preflight` |
 | `ProofRejected` on chain | the proof is real but for a different `chainKey` than the policy's trigger |

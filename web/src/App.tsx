@@ -4,7 +4,6 @@ import { Toasts, toast } from "./components/Toasts";
 import { PoolPanel } from "./components/PoolPanel";
 import { BuyCover } from "./components/BuyCover";
 import { PolicyTable } from "./components/PolicyTable";
-import { SourceChain } from "./components/SourceChain";
 import { EventLog } from "./components/EventLog";
 import { Landing } from "./pages/Landing";
 import { Dashboard } from "./pages/Dashboard";
@@ -12,10 +11,10 @@ import { HowItWorks } from "./pages/HowItWorks";
 import { useProtocol } from "./lib/useProtocol";
 import { aiStatus, type AiStatus } from "./lib/ai";
 import { useRoute } from "./lib/router";
-import { D, IS_LOCAL } from "./lib/chain";
+import { D } from "./lib/chain";
 
 export default function App() {
-  const { role, setRole, actor, connect, snap, act, busy, connError, actionError, dismissActionError } = useProtocol();
+  const { actor, connect, disconnect, snap, act, busy, connError, actionError, dismissActionError } = useProtocol();
   const route = useRoute();
 
   const [ai, setAi] = useState<AiStatus | null>(null);
@@ -37,7 +36,7 @@ export default function App() {
   const page = route.page;
   return (
     <>
-      <Shell page={page} role={role} setRole={setRole} actor={actor} connect={connect} ai={ai}>
+      <Shell page={page} actor={actor} connect={connect} disconnect={disconnect} ai={ai}>
         {!snap && !connError && <div className="skeleton">connecting to {D.rpcUrl}…</div>}
         {!snap && connError && <div className="note note-bad">{connError}</div>}
         {snap && (
@@ -48,7 +47,6 @@ export default function App() {
               <div className="grid-2">
                 <PoolPanel snap={snap} actor={actor} act={act} busy={busy} />
                 <div className="stack">
-                  {IS_LOCAL && <SourceChain snap={snap} actor={actor} act={act} busy={busy} />}
                   <section className="card">
                     <div className="card-h"><h2>How underwriting works</h2></div>
                     <ul className="bullets">

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Interface, type Contract } from "ethers";
-import {
-  connectWallet, D, IS_LOCAL, ROLES, read, walletFor,
-  type Actor, type Role, type RoleKey,
-} from "./chain";
+import { connectWallet, D, read, type Actor } from "./chain";
 
 /**
  * Every custom error the stack can throw, in one interface.
@@ -83,8 +80,6 @@ export interface Holding {
 export interface Snapshot {
   pool: PoolState;
   policies: PolicyView[];
-  /** Local mode only — the four demo roles, so the switcher can show balances. */
-  roles: Record<RoleKey, Holding>;
   /** Whoever is signing right now. Null before a wallet is connected. */
   you: Holding | null;
   attestedHeight: bigint;
@@ -175,15 +170,9 @@ async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
     });
   }
 
-  const roles = {} as Record<RoleKey, Holding>;
-  if (IS_LOCAL) {
-    for (const r of ROLES) roles[r.key] = await holdingOf(walletFor(r).address);
-  }
-
   return {
     pool: { totalAssets, locked, free, totalSupply },
     policies,
-    roles,
     you: actor ? await holdingOf(actor.address) : null,
     attestedHeight: attested.height,
     events: [],
@@ -191,17 +180,9 @@ async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
 }
 
 export function useProtocol() {
-  const [role, setRole] = useState<Role>(ROLES[1]); // open as the cover buyer
   const [snap, setSnap] = useState<Snapshot | null>(null);
-
-  /**
-   * Locally the actor follows the role switcher; on Creditcoin it is whatever
-   * wallet the user connected. Everything downstream only sees an Actor, so no
-   * component has to care which world it is in.
-   */
-  const [actor, setActor] = useState<Actor | null>(
-    IS_LOCAL ? { label: ROLES[1].label, address: walletFor(ROLES[1]).address, signer: walletFor(ROLES[1]) } : null,
-  );
+  /** The connected wallet, or null. Everything downstream only sees an Actor. */
+  const [actor, setActor] = useState<Actor | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Two independent failures, deliberately kept apart. The background poll
@@ -258,11 +239,6 @@ export function useProtocol() {
     [refresh],
   );
 
-  const chooseRole = useCallback((r: Role) => {
-    setRole(r);
-    setActor({ label: r.label, address: walletFor(r).address, signer: walletFor(r) });
-  }, []);
-
   const connect = useCallback(async () => {
     try {
       setActor(await connectWallet());
@@ -272,8 +248,10 @@ export function useProtocol() {
     }
   }, []);
 
+  const disconnect = useCallback(() => setActor(null), []);
+
   return {
-    role, setRole: chooseRole, actor, connect, snap, refresh, act, busy,
+    actor, connect, disconnect, snap, refresh, act, busy,
     connError, actionError, dismissActionError: () => setActionError(null),
   };
 }

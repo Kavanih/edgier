@@ -114,7 +114,7 @@ async function main() {
       BlockProver: AttestcoinAddresses.BLOCK_PROVER_PRECOMPILE,
       Decoder: AttestcoinAddresses.DECODER_CC3_TESTNET,
       InsuredContract:
-        process.env.VULNERABLE_VAULT_ADDRESS ??
+        process.env.INSURED_CONTRACT_ADDRESS ??
         "0x0000000000000000000000000000000000000000",
     },
     abis,
@@ -122,7 +122,7 @@ async function main() {
 
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, JSON.stringify(deployment, null, 2));
-  // Keep a per-network copy so `npm run use:local` / `use:live` can swap the UI's target.
+  // Keep a per-network copy alongside the generated frontend file.
   const COPY = resolve(__dirname, "../deployments/cc3testnet.json");
   mkdirSync(dirname(COPY), { recursive: true });
   writeFileSync(COPY, JSON.stringify(deployment, null, 2));

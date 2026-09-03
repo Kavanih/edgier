@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { D, IS_LOCAL, ROLES, walletFor, type Actor, type Role } from "../lib/chain";
+import { D, type Actor } from "../lib/chain";
 import { short } from "../lib/format";
 import { PAGES, app, landing, type Page } from "../lib/router";
 import type { AiStatus } from "../lib/ai";
@@ -7,18 +7,16 @@ import { Icon } from "./Icons";
 import { AskEdgier } from "./AskEdgier";
 
 export function Shell({
-  page, role, setRole, actor, connect, ai, children,
+  page, actor, connect, disconnect, ai, children,
 }: {
   page: Page;
-  role: Role;
-  setRole: (r: Role) => void;
   actor: Actor | null;
   connect: () => void;
+  disconnect: () => void;
   ai: AiStatus | null;
   children: ReactNode;
 }) {
   const meta = PAGES.find((p) => p.key === page)!;
-  const walletConnected = actor?.label === "your wallet";
 
   return (
     <div className="app">
@@ -37,9 +35,9 @@ export function Shell({
         </nav>
 
         <div className="side-foot">
-          <div className={IS_LOCAL ? "chip chip-mock" : "chip chip-live"}>
+          <div className="chip chip-live">
             <span className="chip-dot" />
-            {IS_LOCAL ? "Local · precompiles mocked" : `Creditcoin CC3 · ${D.chainId}`}
+            {`Creditcoin CC3 · ${D.chainId}`}
           </div>
           <div className={ai?.enabled ? "chip chip-ok" : "chip"} title={ai?.model ?? "AI sidecar offline — npm run ai"}>
             <Icon name="brain" size={13} />
@@ -55,19 +53,9 @@ export function Shell({
             <span className="muted">{meta.blurb}</span>
           </div>
           <div className="topbar-actions">
-            {IS_LOCAL && (
-              <div className="seg" title="demo accounts (hardhat test keys)">
-                {ROLES.map((r) => (
-                  <button key={r.key} onClick={() => setRole(r)} title={r.blurb}
-                    className={!walletConnected && r.key === role.key ? "seg-btn active" : "seg-btn"}>
-                    {r.label.split(" ")[0]}
-                  </button>
-                ))}
-              </div>
-            )}
-            {walletConnected ? (
-              <button className="btn btn-outline" onClick={() => setRole(role)} title="disconnect">
-                <span className="dot dot-ok" />{short(actor!.address)}
+            {actor ? (
+              <button className="btn btn-outline" onClick={disconnect} title="disconnect">
+                <span className="dot dot-ok" />{short(actor.address)}
               </button>
             ) : (
               <button className="btn btn-primary" onClick={connect}>
@@ -77,12 +65,7 @@ export function Shell({
           </div>
         </header>
 
-        {actor && (
-          <div className="signing">
-            signing as <code>{actor.address}</code>
-            {IS_LOCAL && !walletConnected && <span className="muted"> · {ROLES.find((r) => walletFor(r).address === actor.address)?.blurb}</span>}
-          </div>
-        )}
+        {actor && <div className="signing">signing as <code>{actor.address}</code></div>}
 
         <main className="content" key={page}>{children}</main>
       </div>

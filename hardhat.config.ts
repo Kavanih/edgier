@@ -17,11 +17,6 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    // --- source chain (where the risk lives) ---
-    sepolia: {
-      url: process.env.SEPOLIA_RPC_URL ?? "",
-      accounts,
-    },
     // --- Creditcoin (where capital, policies and settlement live) ---
     cc3testnet: {
       url: process.env.CC3_TESTNET_RPC_URL ?? "https://rpc.cc3-testnet.creditcoin.network",

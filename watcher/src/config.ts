@@ -7,23 +7,30 @@ function required(name: string): string {
   return v;
 }
 
+/** Attestcoin source-chain id. 1 = Ethereum Sepolia, 3 = Ethereum Mainnet. */
+const chainKey = Number(process.env.CHAIN_KEY ?? 3);
+
 export const config = {
-  sourceRpcUrl: required("SEPOLIA_RPC_URL"),
+  chainKey,
+  /** RPC for the source chain the policies are written against. */
+  sourceRpcUrl:
+    process.env.SOURCE_RPC_URL ??
+    (chainKey === 1 ? process.env.SEPOLIA_RPC_URL : process.env.MAINNET_RPC_URL) ??
+    required("SOURCE_RPC_URL"),
   creditcoinRpcUrl: required("CC3_TESTNET_RPC_URL"),
   proofBuilderUrl: required("PROOF_BUILDER_URL"),
-
-  /** Attestcoin source-chain id. 1 = Ethereum Sepolia, 3 = Ethereum Mainnet. */
-  chainKey: Number(process.env.CHAIN_KEY ?? 1),
-
   watcherKey: required("WATCHER_PRIVATE_KEY"),
-
   claimVerifier: required("CLAIM_VERIFIER_ADDRESS"),
   policyManager: required("POLICY_MANAGER_ADDRESS"),
-  /** The contract on Ethereum we are watching for loss events. */
-  insuredContract: required("VULNERABLE_VAULT_ADDRESS"),
+  /** The EVM contract we are watching for loss events. */
+  insuredContract: required("INSURED_CONTRACT_ADDRESS"),
 };
 
-/** Selectors TriggerLib treats as loss events. Keep in sync with TriggerLib.sol. */
+/**
+ * Calldata selectors worth a closer look. This is only a pre-filter to avoid
+ * proving every transaction; the contract matches on receipt LOGS, so a loss
+ * reached through a multicall is still settled once someone submits it.
+ */
 export const LOSS_SELECTORS: Record<string, string> = {
   "0x3659cfe6": "upgradeTo(address)",
   "0x4f1ef286": "upgradeToAndCall(address,bytes)",
