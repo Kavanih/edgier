@@ -203,8 +203,7 @@ export function useProtocol() {
       setSnap((prev) => (prev ? { ...prev, events } : prev));
     } catch (e) {
       setConnError(
-        `Cannot reach ${D.rpcUrl}. Is the local node running? ` +
-        `(npm run node, then npm run deploy:local)  —  ${(e as Error).message}`,
+        `Cannot reach ${D.rpcUrl} — ${(e as Error).message}`,
       );
     }
   }, [actor]);
