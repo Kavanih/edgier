@@ -29,7 +29,12 @@ function parse(): Route {
 export function useRoute(): Route {
   const [route, set] = useState<Route>(parse);
   useEffect(() => {
-    const on = () => { set(parse()); window.scrollTo({ top: 0 }); };
+    const on = () => {
+      set(parse());
+      // Route changes start at the top; section anchors (#how, #proof, #ai) are
+      // left to the browser, which scrolls to the element itself.
+      if (window.location.hash.startsWith("#/")) window.scrollTo({ top: 0 });
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
