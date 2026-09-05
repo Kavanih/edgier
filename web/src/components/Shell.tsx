@@ -13,15 +13,17 @@ export function Shell({
   actor: Actor | null;
   connect: () => void;
   disconnect: () => void;
-  ai: AiStatus | null;
+  ai?: AiStatus | null;
   children: ReactNode;
 }) {
+  void ai;
   const meta = PAGES.find((p) => p.key === page)!;
 
   return (
     <div className="app">
       <aside className="sidebar">
         <a className="logo" href={landing()} title="the edge is the proof">
+          <span className="logo-mark"><Icon name="brain" size={16} /></span>
           <span className="logo-text">edgier<span className="caret">_</span></span>
         </a>
 
@@ -38,10 +40,6 @@ export function Shell({
           <div className="chip chip-live">
             <span className="chip-dot" />
             {`Creditcoin CC3 · ${D.chainId}`}
-          </div>
-          <div className={ai?.enabled ? "chip chip-ok" : "chip"} title={ai?.model ?? "AI sidecar offline — npm run ai"}>
-            <Icon name="brain" size={13} />
-            {ai?.enabled ? `AI · ${ai.callsToday}/${ai.dailyCap} free calls` : "AI · offline"}
           </div>
         </div>
       </aside>

@@ -36,7 +36,7 @@ export function AskEdgier({ enabled }: { enabled: boolean }) {
         <div className="ask-panel">
           <div className="ask-head">
             <span className="ai-badge">AI</span><b>Ask Edgier</b>
-            <span className="muted small" style={{ marginLeft: "auto" }}>{enabled ? "free model · advisory" : "sidecar offline"}</span>
+            <span className="muted small" style={{ marginLeft: "auto" }}>{enabled ? "advisory" : "offline"}</span>
           </div>
           <div className="ask-log">
             {log.length === 0 && (
@@ -48,13 +48,13 @@ export function AskEdgier({ enabled }: { enabled: boolean }) {
             {log.map((m, i) => (
               <div key={i} className="ask-turn">
                 <div className="ask-q">{m.q}</div>
-                <div className="ask-a">{m.a}{m.model && <span className="ai-model"> · {m.model}</span>}</div>
+                <div className="ask-a">{m.a}{m.model && <span className="ai-model"> · {m.model.replace(/:free$/, "")}</span>}</div>
               </div>
             ))}
             {busy && <div className="ask-a muted">thinking…</div>}
           </div>
           <form className="ask-form" onSubmit={(e) => { e.preventDefault(); send(q); }}>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={enabled ? "Ask about cover, proofs, pricing…" : "Set OPENROUTER_API_KEY and run npm run ai"} disabled={!enabled || busy} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={enabled ? "Ask about cover, proofs, pricing…" : "assistant offline"} disabled={!enabled || busy} />
             <button className="btn btn-primary btn-sm" disabled={!enabled || busy || !q.trim()}><Icon name="arrow" size={14} /></button>
           </form>
         </div>

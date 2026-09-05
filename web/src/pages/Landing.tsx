@@ -31,7 +31,7 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       <div className="blobs" aria-hidden="true"><i /><i /><i /></div>
 
       <header className="l-nav">
-        <a className="logo" href="#/"><span className="logo-text">edgier<span className="caret">_</span></span></a>
+        <a className="logo" href="#/"><span className="logo-mark"><Icon name="brain" size={16} /></span><span className="logo-text">edgier<span className="caret">_</span></span></a>
         <nav className="l-links">
           <a href="#how">How it works</a>
           <a href="#proof">The proof</a>
@@ -141,11 +141,11 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
         <div className="l-ai-text">
           <span className="eyebrow"><Icon name="brain" size={12} /> AI that informs. Never decides.</span>
           <h2 className="l-h2">A model reads the proof. The contract still decides.</h2>
-          <p>Edgier ships an analyst that reads <em>cryptographically verified</em> cross-chain data — the proven transaction's receipt and logs — and says which policies it hits and why. An underwriting assistant turns plain English into policy terms, and tells you what that trigger will <b>not</b> catch. Both run on free OpenRouter models, both are advisory, and neither can move a token. Remove them and the protocol is unchanged.</p>
+          <p>Edgier ships an analyst that reads <em>cryptographically verified</em> cross-chain data — the proven transaction's receipt and logs — and says which policies it hits and why. An underwriting assistant turns plain English into policy terms, and tells you what that trigger will <b>not</b> catch. Both are advisory, and neither can move a token. Remove them and the protocol is unchanged.</p>
           <div className="l-cta"><a className="btn btn-primary" href={app("claims")}>Watch it read the Ronin proof <Icon name="arrow" size={14} /></a></div>
         </div>
         <div className="l-ai-card">
-          <div className="ai-head"><span className="ai-badge">AI</span><span className="ai-title">incident analyst</span><span className="ai-model">gemma-4-31b-it:free</span></div>
+          <div className="ai-head"><span className="ai-badge">AI</span><span className="ai-title">incident analyst</span><span className="ai-model">advisory</span></div>
           <div className="ai-headline">Ronin Bridge drained: 25.5M USDC transferred out in a successful transaction</div>
           <p className="ai-text">receiptStatus is 1 and a Transfer log has from == the insured bridge with value 25,500,000 USDC, above the 1,000,000 threshold. Block 14,442,840 lies inside the policy window.</p>
           <table className="table table-compact"><tbody><tr><td className="mono">#1</td><td><span className="badge badge-ok">trigger met</span></td><td>LARGE_OUTFLOW from the insured contract ≥ threshold, tx succeeded, in window</td></tr></tbody></table>
@@ -169,7 +169,7 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       </Reveal>
 
       <footer className="l-foot">
-        <span className="logo-text">edgier<span className="caret">_</span></span>
+        <span className="logo"><span className="logo-mark"><Icon name="brain" size={14} /></span><span className="logo-text">edgier<span className="caret">_</span></span></span>
         <span className="muted">the edge is the proof · BUIDL CTC 2026 Fall · Creditcoin CC3 Testnet</span>
       </footer>
     </div>

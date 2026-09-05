@@ -39,7 +39,7 @@ export function AiAnalyst({
       <div className="ai-head">
         <span className="ai-badge">AI</span>
         <span className="ai-title">{title}</span>
-        {model && <span className="ai-model">{model}</span>}
+        {model && <span className="ai-model">{model.replace(/:free$/, "")}</span>}
       </div>
       <p className="muted small">
         The model receives the <em>verified</em> transaction — sender, receiver, receipt status, every
@@ -50,7 +50,7 @@ export function AiAnalyst({
         <button className="btn btn-outline" disabled={!enabled || busy} onClick={run}>
           <Icon name="brain" size={14} /> {busy ? "reading the proof…" : "analyse with AI"}
         </button>
-        {!enabled && <span className="muted small">sidecar offline — <code>npm run ai</code></span>}
+        {!enabled && <span className="muted small">assistant offline</span>}
       </div>
       {err && <div className="note note-bad">{err}</div>}
       {out && !out.raw && (
