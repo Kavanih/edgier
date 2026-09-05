@@ -24,6 +24,15 @@ const COVER = ethers.parseEther("10000");
 const EXPLORER = "https://creditcoin-testnet.blockscout.com";
 const STATUS = ["NONE", "ACTIVE", "CLAIMED", "EXPIRED"];
 
+let _policies: { id: bigint; target: string; chainKey: bigint; perils: { token: string }[]; status: bigint }[] | null = null;
+async function allPolicies() {
+  if (_policies) return _policies;
+  const pm = await ethers.getContractAt("PolicyManager", process.env.POLICY_MANAGER_ADDRESS!);
+  const n = Number(await pm.nextPolicyId()); const out = [];
+  for (let i = 1; i < n; i++) { const p = await pm.policies(i); out.push({ id: BigInt(i), target: p.target, chainKey: p.chainKey, perils: [...p.perils], status: p.status }); }
+  return (_policies = out);
+}
+
 async function main() {
   const d = JSON.parse(readFileSync(resolve(__dirname, "../deployments/cc3testnet.json"), "utf8"));
   const [signer] = await ethers.getSigners();
@@ -40,6 +49,17 @@ async function main() {
 
   const results: { name: string; policyId: bigint; status: string; tx?: string }[] = [];
   for (const inc of INCIDENTS) {
+    {
+
+      const already = (await allPolicies()).find((p) =>
+
+        p.target.toLowerCase() === inc.target.toLowerCase() && p.chainKey === BigInt(inc.chainKey) &&
+
+        p.perils.length === 1 && p.perils[0].token.toLowerCase() === inc.tokenAddress.toLowerCase() && Number(p.status) === 2);
+
+      if (already) { console.log(`### ${inc.name} — already CLAIMED as policy #${already.id}; skipping`); continue; }
+
+    }
     try { results.push(await settle(inc, { pm, verifier, usd, builder })); }
     catch (e) { console.log(`   ✖ ${inc.name}: ${(e as Error).message.slice(0, 160)}`); }
   }

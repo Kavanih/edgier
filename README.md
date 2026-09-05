@@ -14,7 +14,7 @@ Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-20
 | | |
 |---|---|
 | **Live app** | `npm run dev` → http://localhost:5173 (reads the live testnet; wallet needed to act) |
-| **Contracts** | PolicyManager [`0xc8E5…6Ed7`](https://creditcoin-testnet.blockscout.com/address/0xc8E5a718E4419DAAbf3FD281596512Fe1C196Ed7) · ClaimVerifier [`0x5134…8229`](https://creditcoin-testnet.blockscout.com/address/0x5134b05649e45DbFaa4d92d4CC4ED57D92888229) · CoverPool [`0xD93b…177f`](https://creditcoin-testnet.blockscout.com/address/0xD93b1268e87271b48124DAB28Af7b56EC571177f) |
+| **Contracts** | PolicyManager [`0xf6EF…225d`](https://creditcoin-testnet.blockscout.com/address/0xf6EFc1F84856ee355E95cEE47F950A714968225d) · ClaimVerifier [`0x9F89…243a`](https://creditcoin-testnet.blockscout.com/address/0x9F89bA4246976580E315B5194F3A73e0B484243a) · CoverPool [`0x91ec…b3dC`](https://creditcoin-testnet.blockscout.com/address/0x91ecfBfc8fD3D19deaD54043c5FCCcC5dFCbb3dC) |
 | **Chain** | Creditcoin CC3 Testnet, EVM chain id 102031 |
 | **Proven** | Five real Ethereum mainnet exploits, each settled on-chain against a proof of the actual exploit transaction — see [Verified live](#verified-live) |
 
@@ -133,14 +133,16 @@ on-chain transfer of 10,000 mUSD.
 
 | # | Incident | Loss proven | Exploit tx (Ethereum) | Settlement (Creditcoin) |
 |---|---|---|---|---|
-| 1 | Ronin Bridge, 2022 | 25.5M USDC | [`0xed2c72…`](https://etherscan.io/tx/0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08) | [`0x6fd75a…`](https://creditcoin-testnet.blockscout.com/tx/0x6fd75aa524d5c16cfa4cdcf90bf2e8c98dd3eb878793415515a4709d33ca8b17) |
-| 2 | Euler Finance, 2023 | 38.9M DAI | [`0xc310a0…`](https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d) | [`0x44c190…`](https://creditcoin-testnet.blockscout.com/tx/0x44c1906886475604f4a8e3d06e93a1f8dbe43feadee026d6c513088a671e006f) |
-| 3 | Harmony Horizon Bridge, 2022 | 6.07M DAI | [`0xb51368…`](https://etherscan.io/tx/0xb51368d8c2b857c5f7de44c57ff32077881df9ecb60f0450ee1226e1a7b8a0dd) | [`0x559b38…`](https://creditcoin-testnet.blockscout.com/tx/0x559b3867bd2d4c544175b8901c5c350f6c79b947d150a93995bc613318a1ebbb) |
-| 4 | Poly Network, 2021 | 259.7B SHIB | [`0xe05dcd…`](https://etherscan.io/tx/0xe05dcda4f1b779989b0aa2bd3fa262d4e6e13343831cb337c2c5beb2266138f5) | [`0xe2b9bb…`](https://creditcoin-testnet.blockscout.com/tx/0xe2b9bbfb17d690c724c10a5b1deb4cfb9506b3dd798c210292a1e82acbfc697d) |
-| 5 | Nomad Bridge, 2022 | 10,000 WETH | [`0x56b455…`](https://etherscan.io/tx/0x56b4551dd7e8f475a2c70c7a7e53a5e9a1d5e09f33dac0d89b7816748a8caaf6) | [`0x5987ef…`](https://creditcoin-testnet.blockscout.com/tx/0x5987ef147ee645a3c9ce4d8c7fe74ea67cb9104ce38c93d9e293f0b586385839) |
+| 1 | Ronin Bridge, 2022 | 25.5M USDC | [`0xed2c72…`](https://etherscan.io/tx/0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08) | [`0x51f14e…`](https://creditcoin-testnet.blockscout.com/tx/0x51f14ea6646344365cfa6af601005eebddbda6adc4123dc21c92b59d71436979) |
+| 2 | Euler Finance, 2023 | 38.9M DAI | [`0xc310a0…`](https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d) | [`0xda597d…`](https://creditcoin-testnet.blockscout.com/tx/0xda597d7ae84fb72e4d9523c8c4acc0a65d128bba5a3b29ce6fc5ee126155a7fd) |
+| 3 | Harmony Horizon Bridge, 2022 | 6.07M DAI | [`0xb51368…`](https://etherscan.io/tx/0xb51368d8c2b857c5f7de44c57ff32077881df9ecb60f0450ee1226e1a7b8a0dd) | [`0xe463bf…`](https://creditcoin-testnet.blockscout.com/tx/0xe463bf9f9e38ce40f14884faf4fa198fc6ccd7c60ff19fa59d7a32c39de18c59) |
+| 4 | Poly Network, 2021 | 259.7B SHIB | [`0xe05dcd…`](https://etherscan.io/tx/0xe05dcda4f1b779989b0aa2bd3fa262d4e6e13343831cb337c2c5beb2266138f5) | [`0x5d9fa2…`](https://creditcoin-testnet.blockscout.com/tx/0x5d9fa2f8a5c8d5142854b41c64051c86cd55d3ef0c5107d830feadeb3cd9f152) |
+| 5 | Nomad Bridge, 2022 | 10,000 WETH | [`0x56b455…`](https://etherscan.io/tx/0x56b4551dd7e8f475a2c70c7a7e53a5e9a1d5e09f33dac0d89b7816748a8caaf6) | [`0x9cec96…`](https://creditcoin-testnet.blockscout.com/tx/0x9cec96a889808dbcf45522000f8c0f663440679412f21684c59b17db1cdcba3c) |
 
-Each `Transfer` had to be emitted by the policy's named token — USDC, DAI, DAI, SHIB, WETH — to
-match; that binding is what stops a fake token from triggering a payout.
+Each policy is a one-peril bundle (`LARGE_OUTFLOW` on the token that left — USDC, DAI, DAI, SHIB,
+WETH); the `Transfer` had to be emitted by that token to match, which is what stops a fake token
+from triggering a payout. These are on the current (third) deployment, with the concentration cap,
+waiting-period logic and self-inflicted check all live.
 
 **The refusal worth showing.** On the first deployment of these contracts a Poly Network policy
 was written with a threshold *above* what the transaction moved. The precompile verified the
@@ -242,7 +244,7 @@ inside — never the operator. Five defences make that workable without a commit
 | Defence | Where | What it stops |
 |---|---|---|
 | **Self-inflicted losses never pay** — a loss transaction whose sender is the policyholder reverts with `SelfInflicted` | `ClaimVerifier` | the lazy self-trigger (a second wallet defeats it, which is why the rest exist) |
-| **Concentration cap** — one contract may never be more than `maxCoverPerTargetBps` (10%) of pool assets | `PolicyManager` | a single self-rug draining the pool; blast radius is bounded |
+| **Concentration cap** — one contract may never be more than `maxCoverPerTargetBps` (10%) of pool assets, re-measured at every purchase | `PolicyManager` | a single self-rug draining the pool; blast radius is bounded. (It bit us: after the first payout of the demo run the pool had shrunk enough that the second 10,000 policy exceeded 10% and was refused with `TargetConcentration` — the testnet pool is seeded at 300,000 for that reason.) |
 | **Waiting period** — cover starts no earlier than the attested head plus `waitingBlocks` (~1 day) | `PolicyManager` | buy Monday, rug Tuesday; also closes insuring a loss that is already provable |
 | **Curated allowlist** — when `curated` is on, only `insurable[chainKey][target]` contracts may be covered | `PolicyManager` | insuring a toy contract you deployed yesterday; this is how underwriters choose what they back |
 | **Price** — base rate is the sum of the bundle's distinct perils, then the utilisation curve | `PolicyManager` | residual risk goes into the premium, as it does everywhere |

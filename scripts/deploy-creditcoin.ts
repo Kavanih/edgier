@@ -80,8 +80,11 @@ async function main() {
   // --- seed so the UI opens onto a pool with capacity -------------------
   const poolAddr = await pool.getAddress();
   await (await usd.approve(poolAddr, ethers.MaxUint256)).wait();
-  await (await pool.deposit(ethers.parseEther("100000"), deployer.address)).wait();
-  console.log("seeded the pool with 100,000 mUSD");
+  // 300k, not 100k: the per-contract cap is 10% of assets and it is re-measured
+  // after every payout. Five 10,000 policies must still fit once the pool has
+  // paid four of them (260k → cap 26k). Demo sizing, but the arithmetic is real.
+  await (await pool.deposit(ethers.parseEther("300000"), deployer.address)).wait();
+  console.log("seeded the pool with 300,000 mUSD");
 
   // --- read the live attestation height so the UI defaults are sane -----
   const chainInfo = await ethers.getContractAt(

@@ -1,17 +1,17 @@
 {
   "mode": "live",
-  "label": "Creditcoin CC3 Testnet \u2014 real Attestcoin precompiles",
+  "label": "Creditcoin CC3 Testnet — real Attestcoin precompiles",
   "chainId": 102031,
   "rpcUrl": "https://rpc.cc3-testnet.creditcoin.network",
   "explorer": "https://creditcoin-testnet.blockscout.com",
   "chainKey": 3,
   "startAttestedHeight": 14442790,
-  "deployBlock": 5434003,
+  "deployBlock": 5434700,
   "addresses": {
-    "MockUSD": "0x7333321CE0E23D1d25a8EaD4DB955Aa7077BBa65",
-    "CoverPool": "0xD93b1268e87271b48124DAB28Af7b56EC571177f",
-    "PolicyManager": "0xc8E5a718E4419DAAbf3FD281596512Fe1C196Ed7",
-    "ClaimVerifier": "0x5134b05649e45DbFaa4d92d4CC4ED57D92888229",
+    "MockUSD": "0x6F5A6f111e7793b854766C149fDBFeF4ab5B19B4",
+    "CoverPool": "0x91ecfBfc8fD3D19deaD54043c5FCCcC5dFCbb3dC",
+    "PolicyManager": "0xf6EFc1F84856ee355E95cEE47F950A714968225d",
+    "ClaimVerifier": "0x9F89bA4246976580E315B5194F3A73e0B484243a",
     "ChainInfo": "0x0000000000000000000000000000000000000FD3",
     "BlockProver": "0x0000000000000000000000000000000000000FD2",
     "Decoder": "0x731c345d79Fb8BbDC541f9DF3b6317585F849F9f",
@@ -1194,9 +1194,9 @@
             "type": "uint256"
           },
           {
-            "internalType": "uint64",
-            "name": "attestedHeight",
-            "type": "uint64"
+            "internalType": "uint256",
+            "name": "earliestAllowed",
+            "type": "uint256"
           }
         ],
         "name": "BackdatedWindow",
@@ -1213,8 +1213,24 @@
         "type": "error"
       },
       {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "index",
+            "type": "uint256"
+          }
+        ],
+        "name": "MalformedPeril",
+        "type": "error"
+      },
+      {
         "inputs": [],
         "name": "NoAttestation",
+        "type": "error"
+      },
+      {
+        "inputs": [],
+        "name": "NoPerils",
         "type": "error"
       },
       {
@@ -1226,12 +1242,28 @@
         "inputs": [
           {
             "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          }
+        ],
+        "name": "NotInsurable",
+        "type": "error"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
             "name": "attestedHeight",
             "type": "uint64"
           },
           {
             "internalType": "uint256",
-            "name": "endBlock",
+            "name": "claimableUntil",
             "type": "uint256"
           }
         ],
@@ -1282,8 +1314,24 @@
         "type": "error"
       },
       {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "wouldBe",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "cap",
+            "type": "uint256"
+          }
+        ],
+        "name": "TargetConcentration",
+        "type": "error"
+      },
+      {
         "inputs": [],
-        "name": "TokenRequired",
+        "name": "TooManyPerils",
         "type": "error"
       },
       {
@@ -1328,6 +1376,19 @@
         "inputs": [
           {
             "indexed": false,
+            "internalType": "bool",
+            "name": "curated",
+            "type": "bool"
+          }
+        ],
+        "name": "CuratedSet",
+        "type": "event"
+      },
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": false,
             "internalType": "uint256",
             "name": "kinkWad",
             "type": "uint256"
@@ -1346,6 +1407,50 @@
           }
         ],
         "name": "CurveSet",
+        "type": "event"
+      },
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": false,
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "indexed": true,
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          },
+          {
+            "indexed": false,
+            "internalType": "bool",
+            "name": "insurable",
+            "type": "bool"
+          }
+        ],
+        "name": "InsurableSet",
+        "type": "event"
+      },
+      {
+        "anonymous": false,
+        "inputs": [
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "waitingBlocks",
+            "type": "uint256"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "maxCoverPerTargetBps",
+            "type": "uint256"
+          }
+        ],
+        "name": "LimitsSet",
         "type": "event"
       },
       {
@@ -1384,6 +1489,18 @@
           },
           {
             "indexed": false,
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "indexed": true,
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          },
+          {
+            "indexed": false,
             "internalType": "uint256",
             "name": "coverAmount",
             "type": "uint256"
@@ -1392,6 +1509,12 @@
             "indexed": false,
             "internalType": "uint256",
             "name": "premium",
+            "type": "uint256"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "perils",
             "type": "uint256"
           }
         ],
@@ -1424,6 +1547,12 @@
             "internalType": "bytes32",
             "name": "txId",
             "type": "bytes32"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "perilIndex",
+            "type": "uint256"
           }
         ],
         "name": "PolicyClaimed",
@@ -1531,15 +1660,56 @@
           {
             "components": [
               {
-                "internalType": "uint64",
-                "name": "chainKey",
-                "type": "uint64"
+                "internalType": "enum TriggerLib.Kind",
+                "name": "kind",
+                "type": "uint8"
+              },
+              {
+                "internalType": "uint256",
+                "name": "threshold",
+                "type": "uint256"
               },
               {
                 "internalType": "address",
-                "name": "target",
+                "name": "token",
                 "type": "address"
               },
+              {
+                "internalType": "bytes32",
+                "name": "signature",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct TriggerLib.Peril[]",
+            "name": "perils",
+            "type": "tuple[]"
+          }
+        ],
+        "name": "bundleBaseBps",
+        "outputs": [
+          {
+            "internalType": "uint256",
+            "name": "bps",
+            "type": "uint256"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          },
+          {
+            "components": [
               {
                 "internalType": "enum TriggerLib.Kind",
                 "name": "kind",
@@ -1554,11 +1724,16 @@
                 "internalType": "address",
                 "name": "token",
                 "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "signature",
+                "type": "bytes32"
               }
             ],
-            "internalType": "struct TriggerLib.Trigger",
-            "name": "trigger",
-            "type": "tuple"
+            "internalType": "struct TriggerLib.Peril[]",
+            "name": "perils",
+            "type": "tuple[]"
           },
           {
             "internalType": "uint256",
@@ -1619,6 +1794,19 @@
         "type": "function"
       },
       {
+        "inputs": [],
+        "name": "curated",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
         "inputs": [
           {
             "internalType": "uint256",
@@ -1632,8 +1820,69 @@
         "type": "function"
       },
       {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "",
+            "type": "address"
+          }
+        ],
+        "name": "insurable",
+        "outputs": [
+          {
+            "internalType": "bool",
+            "name": "",
+            "type": "bool"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
         "inputs": [],
         "name": "kinkWad",
+        "outputs": [
+          {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "",
+            "type": "address"
+          }
+        ],
+        "name": "liveCoverOn",
+        "outputs": [
+          {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [],
+        "name": "maxCoverPerTargetBps",
         "outputs": [
           {
             "internalType": "uint256",
@@ -1708,17 +1957,17 @@
                 "type": "uint256"
               },
               {
+                "internalType": "uint64",
+                "name": "chainKey",
+                "type": "uint64"
+              },
+              {
+                "internalType": "address",
+                "name": "target",
+                "type": "address"
+              },
+              {
                 "components": [
-                  {
-                    "internalType": "uint64",
-                    "name": "chainKey",
-                    "type": "uint64"
-                  },
-                  {
-                    "internalType": "address",
-                    "name": "target",
-                    "type": "address"
-                  },
                   {
                     "internalType": "enum TriggerLib.Kind",
                     "name": "kind",
@@ -1733,11 +1982,16 @@
                     "internalType": "address",
                     "name": "token",
                     "type": "address"
+                  },
+                  {
+                    "internalType": "bytes32",
+                    "name": "signature",
+                    "type": "bytes32"
                   }
                 ],
-                "internalType": "struct TriggerLib.Trigger",
-                "name": "trigger",
-                "type": "tuple"
+                "internalType": "struct TriggerLib.Peril[]",
+                "name": "perils",
+                "type": "tuple[]"
               },
               {
                 "internalType": "enum PolicyManager.Status",
@@ -1769,9 +2023,31 @@
       {
         "inputs": [
           {
-            "internalType": "enum TriggerLib.Kind",
-            "name": "kind",
-            "type": "uint8"
+            "components": [
+              {
+                "internalType": "enum TriggerLib.Kind",
+                "name": "kind",
+                "type": "uint8"
+              },
+              {
+                "internalType": "uint256",
+                "name": "threshold",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "signature",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct TriggerLib.Peril[]",
+            "name": "perils",
+            "type": "tuple[]"
           },
           {
             "internalType": "uint256",
@@ -1798,9 +2074,31 @@
       {
         "inputs": [
           {
-            "internalType": "enum TriggerLib.Kind",
-            "name": "kind",
-            "type": "uint8"
+            "components": [
+              {
+                "internalType": "enum TriggerLib.Kind",
+                "name": "kind",
+                "type": "uint8"
+              },
+              {
+                "internalType": "uint256",
+                "name": "threshold",
+                "type": "uint256"
+              },
+              {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "signature",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct TriggerLib.Peril[]",
+            "name": "perils",
+            "type": "tuple[]"
           },
           {
             "internalType": "uint256",
@@ -1809,6 +2107,30 @@
           }
         ],
         "name": "rateFor",
+        "outputs": [
+          {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          }
+        ],
+        "name": "remainingCapacityFor",
         "outputs": [
           {
             "internalType": "uint256",
@@ -1860,6 +2182,19 @@
       {
         "inputs": [
           {
+            "internalType": "bool",
+            "name": "on",
+            "type": "bool"
+          }
+        ],
+        "name": "setCurated",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
             "internalType": "uint256",
             "name": "kinkWad_",
             "type": "uint256"
@@ -1883,6 +2218,47 @@
       {
         "inputs": [
           {
+            "internalType": "uint64",
+            "name": "chainKey",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "on",
+            "type": "bool"
+          }
+        ],
+        "name": "setInsurable",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "waitingBlocks_",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "maxCoverPerTargetBps_",
+            "type": "uint256"
+          }
+        ],
+        "name": "setLimits",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
             "internalType": "uint256",
             "name": "policyId",
             "type": "uint256"
@@ -1891,6 +2267,11 @@
             "internalType": "bytes32",
             "name": "txId",
             "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "perilIndex",
+            "type": "uint256"
           }
         ],
         "name": "settle",
@@ -1946,6 +2327,19 @@
           }
         ],
         "name": "utilisationAfter",
+        "outputs": [
+          {
+            "internalType": "uint256",
+            "name": "",
+            "type": "uint256"
+          }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [],
+        "name": "waitingBlocks",
         "outputs": [
           {
             "internalType": "uint256",
@@ -2053,6 +2447,17 @@
         "type": "error"
       },
       {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "holder",
+            "type": "address"
+          }
+        ],
+        "name": "SelfInflicted",
+        "type": "error"
+      },
+      {
         "inputs": [],
         "name": "TriggerNotMet",
         "type": "error"
@@ -2083,6 +2488,12 @@
             "internalType": "uint64",
             "name": "sourceBlock",
             "type": "uint64"
+          },
+          {
+            "indexed": false,
+            "internalType": "uint256",
+            "name": "perilIndex",
+            "type": "uint256"
           }
         ],
         "name": "ClaimSubmitted",
@@ -2194,6 +2605,16 @@
             "internalType": "bool",
             "name": "inWindow",
             "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "selfInflicted",
+            "type": "bool"
+          },
+          {
+            "internalType": "int256",
+            "name": "perilIndex",
+            "type": "int256"
           }
         ],
         "stateMutability": "view",
