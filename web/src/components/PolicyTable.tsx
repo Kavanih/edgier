@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { contractsFor, type Actor } from "../lib/chain";
 import { amount, short } from "../lib/format";
-import { kindLabel } from "../lib/triggers";
+import { perilLabel } from "../lib/triggers";
 import { INCIDENTS, blockscoutTx, etherscanTx, type Incident } from "../lib/incidents";
 import { describeVerified, fetchProof, verifyAndDecode, type Proof, type Verified } from "../lib/proof";
 import type { PolicyView, Snapshot } from "../lib/useProtocol";
@@ -20,17 +20,18 @@ function settlementOf(snap: Snapshot, id: bigint) {
 }
 function incidentOf(p: PolicyView): Incident | undefined {
   return INCIDENTS.find((i) =>
-    i.target.toLowerCase() === p.trigger.target.toLowerCase() &&
-    BigInt(i.chainKey) === p.trigger.chainKey &&
+    i.target.toLowerCase() === p.target.toLowerCase() &&
+    BigInt(i.chainKey) === p.chainKey &&
     BigInt(i.block) >= p.startBlock && BigInt(i.block) <= p.endBlock);
 }
+const perilsSummary = (p: PolicyView) => p.perils.map(perilLabel).join(" · ");
 
 function WindowCell({ p }: { p: PolicyView }) {
   const [a, setA] = useState<string | null>(null);
   const [b, setB] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    const ck = Number(p.trigger.chainKey);
+    const ck = Number(p.chainKey);
     blockTime(ck, Number(p.startBlock)).then((t) => live && setA(t ? fmtDate(t) : null));
     blockTime(ck, Number(p.endBlock)).then((t) => live && setB(t ? fmtDate(t) : null));
     return () => { live = false; };
@@ -56,7 +57,7 @@ export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snaps
         {snap.policies.length > 0 && (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>#</th><th>Holder</th><th>Insured</th><th>Chain</th><th>Trigger</th><th className="num">Cover</th><th>Coverage period</th><th>Status</th><th>Proof</th><th /></tr></thead>
+              <thead><tr><th>#</th><th>Holder</th><th>Insured</th><th>Chain</th><th>Perils</th><th className="num">Cover</th><th>Coverage period</th><th>Status</th><th>Proof</th><th /></tr></thead>
               <tbody>
                 {snap.policies.map((p) => {
                   const s = settlementOf(snap, p.id);
@@ -65,9 +66,9 @@ export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snaps
                     <tr key={p.id.toString()} className={p.id === open ? "open" : undefined}>
                       <td className="mono muted">{p.id.toString()}</td>
                       <td className="mono">{short(p.holder)}</td>
-                      <td className="mono" title={p.trigger.target}>{inc ? inc.name : short(p.trigger.target)}</td>
-                      <td>{p.trigger.chainKey === 3n ? "mainnet" : p.trigger.chainKey === 1n ? "sepolia" : p.trigger.chainKey.toString()}</td>
-                      <td>{kindLabel(Number(p.trigger.kind))}</td>
+                      <td className="mono" title={p.target}>{inc ? inc.name : short(p.target)}</td>
+                      <td>{p.chainKey === 3n ? "mainnet" : p.chainKey === 1n ? "sepolia" : p.chainKey.toString()}</td>
+                      <td title={perilsSummary(p)}>{p.perils.length === 1 ? perilsSummary(p) : `${p.perils.length} perils`}</td>
                       <td className="num mono">{amount(p.coverAmount, 0)}</td>
                       <td className="small"><WindowCell p={p} /></td>
                       <td><span className={`badge badge-${TONE[p.status]}`}>{STATUS[p.status]}</span></td>
@@ -111,7 +112,7 @@ function ProofPanel({ policy, snap, actor, act, busy, aiEnabled }: { policy: Pol
   const [verified, setVerified] = useState<Verified | null>(null);
   const [step, setStep] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const chainKey = Number(policy.trigger.chainKey);
+  const chainKey = Number(policy.chainKey);
 
   async function run() {
     setErr(null); setProof(null); setVerified(null);
@@ -132,7 +133,7 @@ function ProofPanel({ policy, snap, actor, act, busy, aiEnabled }: { policy: Pol
     <section className="card card-accent">
       <div className="card-h">
         <h2>{policy.status === ACTIVE ? "Settle" : "Inspect"} policy #{policy.id.toString()}</h2>
-        <span className="muted">{kindLabel(Number(policy.trigger.kind))} · {inc?.name ?? short(policy.trigger.target)} · {chainKey === 3 ? "Ethereum mainnet" : "Ethereum Sepolia"}</span>
+        <span className="muted">{perilsSummary(policy)} · {inc?.name ?? short(policy.target)} · {chainKey === 3 ? "Ethereum mainnet" : "Ethereum Sepolia"}</span>
       </div>
 
       {settled && (
@@ -185,6 +186,9 @@ function ProofPanel({ policy, snap, actor, act, busy, aiEnabled }: { policy: Pol
             </table>
           </div>
           {incidentForAi && <AiAnalyst incident={incidentForAi} policies={[policy]} enabled={aiEnabled} title="analyst · reading the verified proof" />}
+          {verified.proofValid && actor && verified.from.toLowerCase() === policy.holder.toLowerCase() && (
+            <div className="note note-warn"><Icon name="warn" size={14} /> This transaction was sent by the policyholder. A self-inflicted loss is not insured — the claim will revert with <code>SelfInflicted</code>.</div>
+          )}
           {policy.status === ACTIVE && (
             <div className="actions">
               <button className="btn btn-primary" disabled={!!busy || !actor || !verified.proofValid} onClick={() => act(`Settle #${policy.id}`, async () => contractsFor(actor!.signer).verifier.submitClaim(policy.id, proof.headerNumber, proof.txBytes, proof.merkleProof, proof.continuityProof))}>

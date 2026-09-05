@@ -2,48 +2,36 @@
 pragma solidity ^0.8.24;
 
 import {
-    IBlockProver,
-    IEvmV1Decoder,
-    CommonTxFields,
-    ReceiptFields,
-    TransactionMerkleProof,
-    ContinuityProof
+    IBlockProver, IEvmV1Decoder, CommonTxFields, ReceiptFields,
+    TransactionMerkleProof, ContinuityProof
 } from "./interfaces/IAttestcoin.sol";
 import {PolicyManager} from "./PolicyManager.sol";
 import {TriggerLib} from "./triggers/TriggerLib.sol";
 
 /// @title ClaimVerifier
-/// @notice The settlement brain. Turns "an Attestcoin proof of an Ethereum
-///         transaction" into "this policy pays out", with no vote, no committee
-///         and no privileged claims assessor anywhere in the path.
-///
-/// @dev The property worth demoing: `submitClaim` is permissionless. The caller
-///      need not be the policyholder. Because the proof is objective, anyone can
-///      force a correct payout — there is no claims process to be denied by.
+/// @notice Turns "an Attestcoin proof of an EVM transaction" into "this policy
+///         pays", with no vote, no committee and no privileged assessor.
+/// @dev `submitClaim` is permissionless. The caller need not be the policyholder:
+///      because the proof is objective, anyone can force a correct payout.
 contract ClaimVerifier {
-    using TriggerLib for TriggerLib.Trigger;
+    using TriggerLib for TriggerLib.Peril[];
 
-    IBlockProver   public immutable blockProver;
-    IEvmV1Decoder  public immutable decoder;
-    PolicyManager  public immutable policyManager;
+    IBlockProver  public immutable blockProver;
+    IEvmV1Decoder public immutable decoder;
+    PolicyManager public immutable policyManager;
 
-    /// @notice Ceiling the BlockProver precompile puts on a batched verify.
     uint256 public constant MAX_BATCH = 10;
 
     /// @dev One proven transaction settles one policy at most once.
     mapping(uint256 => mapping(bytes32 => bool)) public claimed;
 
-    event ClaimSubmitted(
-        uint256 indexed policyId,
-        address indexed submitter,
-        bytes32 indexed txId,
-        uint64 sourceBlock
-    );
+    event ClaimSubmitted(uint256 indexed policyId, address indexed submitter, bytes32 indexed txId, uint64 sourceBlock, uint256 perilIndex);
 
     error ProofRejected();
     error OutsideCoverageWindow(uint64 sourceBlock, uint256 startBlock, uint256 endBlock);
     error TriggerNotMet();
     error AlreadyClaimed();
+    error SelfInflicted(address holder);
     error EmptyBatch();
     error BatchTooLarge(uint256 size, uint256 max);
     error LengthMismatch();
@@ -56,8 +44,6 @@ contract ClaimVerifier {
     }
 
     /// @notice Prove a loss and settle the policy.
-    /// @dev Proof material comes straight from `@gluwa/usc-sdk`'s ProofBuilder —
-    ///      see watcher/src/proof.ts for the producing side.
     function submitClaim(
         uint256 policyId,
         uint64 headerNumber,
@@ -66,34 +52,14 @@ contract ClaimVerifier {
         ContinuityProof calldata continuityProof
     ) external {
         PolicyManager.Policy memory p = policyManager.policies(policyId);
-
-        // Attestcoin: did this transaction really happen on Ethereum?
-        bool ok = blockProver.verify(
-            p.trigger.chainKey,
-            headerNumber,
-            txBytes,
-            merkleProof,
-            continuityProof
-        );
-        if (!ok) revert ProofRejected();
-
+        // Attestcoin: did this transaction really happen on the source chain?
+        if (!blockProver.verify(p.chainKey, headerNumber, txBytes, merkleProof, continuityProof)) revert ProofRejected();
         _settle(p, policyId, headerNumber, txBytes);
     }
 
-    /// @notice Settle up to `MAX_BATCH` policies against transactions that share
-    ///         one continuity proof.
-    ///
-    /// @dev This is the shape the precompile is built for: the batch `verify`
-    ///      overload takes up to 10 transactions within a 1000-block span and
-    ///      checks them against a SINGLE continuity proof. One incident that
-    ///      hits several insured contracts — or one drain spread over several
-    ///      transactions — therefore costs one continuity verification instead
-    ///      of N, which is where nearly all of the gas sits.
-    ///
-    ///      Entries are positional: `policyIds[i]` settles against
-    ///      `txBytesList[i]` at `headerNumbers[i]`. The whole batch reverts if
-    ///      any entry is unsettleable, so a caller should dry-run with
-    ///      `checkClaim` per entry first.
+    /// @notice Up to MAX_BATCH policies against transactions sharing one continuity
+    ///         proof — the precompile's batch overload; one continuity check instead of N.
+    ///         All-or-nothing: dry-run each entry with `checkClaim` first.
     function submitClaimBatch(
         uint256[] calldata policyIds,
         uint64[] calldata headerNumbers,
@@ -104,93 +70,56 @@ contract ClaimVerifier {
         uint256 n = policyIds.length;
         if (n == 0) revert EmptyBatch();
         if (n > MAX_BATCH) revert BatchTooLarge(n, MAX_BATCH);
-        if (
-            headerNumbers.length != n ||
-            txBytesList.length != n ||
-            merkleProofs.length != n
-        ) revert LengthMismatch();
+        if (headerNumbers.length != n || txBytesList.length != n || merkleProofs.length != n) revert LengthMismatch();
 
-        // The precompile verifies one batch against one source chain, so every
-        // policy in it must be written against the same chain.
         PolicyManager.Policy[] memory ps = new PolicyManager.Policy[](n);
         ps[0] = policyManager.policies(policyIds[0]);
-        uint64 chainKey = ps[0].trigger.chainKey;
-
+        uint64 chainKey = ps[0].chainKey;
         for (uint256 i = 1; i < n; i++) {
             ps[i] = policyManager.policies(policyIds[i]);
-            if (ps[i].trigger.chainKey != chainKey) {
-                revert MixedChainKeys(chainKey, ps[i].trigger.chainKey);
-            }
+            if (ps[i].chainKey != chainKey) revert MixedChainKeys(chainKey, ps[i].chainKey);
         }
-
-        // ONE continuity verification for the whole batch.
-        bool ok = blockProver.verify(
-            chainKey,
-            headerNumbers,
-            txBytesList,
-            merkleProofs,
-            sharedContinuityProof
-        );
-        if (!ok) revert ProofRejected();
-
-        for (uint256 i = 0; i < n; i++) {
-            _settle(ps[i], policyIds[i], headerNumbers[i], txBytesList[i]);
-        }
+        if (!blockProver.verify(chainKey, headerNumbers, txBytesList, merkleProofs, sharedContinuityProof)) revert ProofRejected();
+        for (uint256 i = 0; i < n; i++) _settle(ps[i], policyIds[i], headerNumbers[i], txBytesList[i]);
     }
 
-    /// @notice Dry-run a claim without settling. Used by the UI and the watcher
-    ///         to avoid burning gas on transactions that cannot pay out.
+    /// @notice Dry-run without settling. `perilIndex` is which peril fired (or -1).
     function checkClaim(
         uint256 policyId,
         uint64 headerNumber,
         bytes calldata txBytes,
         TransactionMerkleProof calldata merkleProof,
         ContinuityProof calldata continuityProof
-    ) external view returns (bool proofValid, bool triggerMet, bool inWindow) {
+    ) external view returns (bool proofValid, bool triggerMet, bool inWindow, bool selfInflicted, int256 perilIndex) {
         PolicyManager.Policy memory p = policyManager.policies(policyId);
-        TriggerLib.Trigger memory trigger = p.trigger;
-
         inWindow = headerNumber >= p.startBlock && headerNumber <= p.endBlock;
-
-        proofValid = blockProver.verify(
-            trigger.chainKey, headerNumber, txBytes, merkleProof, continuityProof
-        );
-
+        proofValid = blockProver.verify(p.chainKey, headerNumber, txBytes, merkleProof, continuityProof);
+        perilIndex = -1;
         if (proofValid) {
-            CommonTxFields memory txn;
-            triggerMet = trigger.matches(txn, decoder.decodeReceiptFields(txBytes));
+            CommonTxFields memory txn = decoder.decodeCommonTxFields(txBytes);
+            selfInflicted = txn.from == p.holder;
+            perilIndex = p.perils.firstMatch(p.target, txn, decoder.decodeReceiptFields(txBytes));
+            triggerMet = perilIndex >= 0;
         }
     }
 
-    // --- internals --------------------------------------------------------
-
-    /// @dev Everything after the proof has verified: window, replay, trigger, pay.
-    ///      The caller is responsible for having verified `txBytes` first.
-    function _settle(
-        PolicyManager.Policy memory p,
-        uint256 policyId,
-        uint64 headerNumber,
-        bytes calldata txBytes
-    ) private {
+    /// @dev Everything after the proof has verified: window, replay, sender, perils, pay.
+    function _settle(PolicyManager.Policy memory p, uint256 policyId, uint64 headerNumber, bytes calldata txBytes) private {
         bytes32 txId = keccak256(txBytes);
         if (claimed[policyId][txId]) revert AlreadyClaimed();
+        if (headerNumber < p.startBlock || headerNumber > p.endBlock) revert OutsideCoverageWindow(headerNumber, p.startBlock, p.endBlock);
 
-        // The transaction must fall inside the insured window. Both the loss and
-        // its timing are decided by the same proof.
-        if (headerNumber < p.startBlock || headerNumber > p.endBlock) {
-            revert OutsideCoverageWindow(headerNumber, p.startBlock, p.endBlock);
-        }
+        CommonTxFields memory txn = decoder.decodeCommonTxFields(txBytes);
+        // A loss the policyholder sent themselves is not a loss we insure. This
+        // catches the lazy self-trigger; a second wallet defeats it, which is why
+        // the concentration cap and the allowlist exist as well.
+        if (txn.from == p.holder) revert SelfInflicted(p.holder);
 
-        // Decode the now-trusted blob. The encoding carries the receipt, which is
-        // what every shipped trigger is decided on; the tx fields are not fetched.
-        CommonTxFields memory txn;
-        ReceiptFields memory receipt = decoder.decodeReceiptFields(txBytes);
-
-        // Test it against the policy. Reverted transactions never match.
-        if (!p.trigger.matches(txn, receipt)) revert TriggerNotMet();
+        int256 idx = p.perils.firstMatch(p.target, txn, decoder.decodeReceiptFields(txBytes));
+        if (idx < 0) revert TriggerNotMet();
 
         claimed[policyId][txId] = true;
-        emit ClaimSubmitted(policyId, msg.sender, txId, headerNumber);
-        policyManager.settle(policyId, txId);
+        emit ClaimSubmitted(policyId, msg.sender, txId, headerNumber, uint256(idx));
+        policyManager.settle(policyId, txId, uint256(idx));
     }
 }

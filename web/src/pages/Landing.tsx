@@ -127,9 +127,9 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       <section className="l-features">
         <Reveal><h2 className="l-h2">Built for the thing that goes wrong</h2></Reveal>
         <div className="feat-grid">
-          <Feature i={0} icon="shield" title="Parametric, not political" body="Three precisely-defined loss events — EVM standards: EIP-1967, OpenZeppelin Pausable, ERC-20 — matched on the event logs of a proven transaction. If it happened, you are paid. Nothing to argue." />
+          <Feature i={0} icon="shield" title="Parametric, not political" body="One contract, a bundle of perils — upgrade, pause, outflow per token, the protocol\u2019s own alarm events — matched on the event logs of a proven transaction. Any one firing pays. Nothing to argue." />
           <Feature i={1} icon="link" title="Settled by Attestcoin" body="A Creditcoin proof carries the transaction and its receipt — so we know it succeeded, and exactly which events it emitted. Works for any EVM chain Creditcoin attests; Ethereum mainnet and Sepolia today." />
-          <Feature i={2} icon="globe" title="Anyone can settle" body="submitClaim is permissionless. A stranger with no policy can force a correct payout, because the proof — not the caller — is what the contract trusts." />
+          <Feature i={2} icon="globe" title="Users against protocols" body="If you control the insured contract you are the risk, not the customer: self-inflicted losses never pay, one contract is capped at 10% of the pool, cover starts after a waiting period, and underwriters can curate what is insurable." />
           <Feature i={3} icon="vault" title="Priced by scarcity" body="A kinked utilisation curve. Taking the last of the pool costs what it is worth; underwriters earn most when capital is scarcest." />
           <Feature i={4} icon="bolt" title="One proof, ten policies" body="An incident that hits several protocols settles in a batch against a single continuity proof — the shape the precompile was built for." />
           <Feature i={5} icon="check" title="Inclusion is not success" body="A reverted exploit is in a block and fully provable — and must never pay. Every trigger checks receiptStatus first." />
@@ -154,7 +154,7 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       <section className="l-faq">
         <Reveal><h2 className="l-h2">Questions a judge would ask</h2></Reveal>
         <Faq q="Why is this trustless where a DAO vote is not?" a="Because the payout is caused by BlockProver.verify() returning true, and by nothing else. No human, multisig, or model sits in the path. The watcher that fetches proofs is replaceable by anyone." />
-        <Faq q="What can't Edgier insure?" a="Anything that is not a precisely defined event in a transaction's logs. 'Any exploit', TVL drops, price moves, native ETH movements. That limit is the price of being unarguable — and it is stated on the policy, not discovered at claim time." />
+        <Faq q="What can't Edgier insure?" a="Anything that leaves no event in a receipt: native ETH movements, bad debt, a mispriced oracle. And it cannot judge intent — which is why it insures users against protocols, caps each contract, and refuses self-inflicted losses, rather than pretending a receipt can tell a rug from an upgrade." />
         <Faq q="How deep is the Attestcoin integration?" a="The claim path is the precompile: verify() on inclusion + continuity proofs, EvmV1Decoder for the receipt, ChainInfo for attested heights and expiry, and the batch verify overload for multi-policy incidents. Mainnet history from block 0 is what makes the Ronin settlement possible." />
         <Faq q="What does the AI actually do?" a="It reads verified data and explains it: per-policy verdicts on a proven transaction, and policy drafts from plain English. It is advisory. It cannot submit, sign, or move funds." />
       </section>

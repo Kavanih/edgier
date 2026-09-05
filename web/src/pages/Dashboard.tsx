@@ -68,8 +68,8 @@ export function Dashboard({ snap }: { snap: Snapshot }) {
             {snap.policies.slice(-5).reverse().map((p) => (
               <div className="list-row" key={p.id.toString()}>
                 <span className="mono muted">#{p.id.toString()}</span>
-                <span>{kindLabel(Number(p.trigger.kind))}</span>
-                <span className="mono muted">{short(p.trigger.target)}</span>
+                <span>{p.perils.length === 1 ? kindLabel(Number(p.perils[0].kind)) : `${p.perils.length} perils`}</span>
+                <span className="mono muted">{short(p.target)}</span>
                 <span className="mono">{amount(p.coverAmount, 0)}</span>
                 <span className={`badge badge-${["none", "active", "ok", "muted"][p.status]}`}>{["none", "active", "claimed", "expired"][p.status]}</span>
               </div>

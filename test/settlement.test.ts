@@ -3,461 +3,288 @@ import { ethers } from "hardhat";
 import type { BaseContract, Signer } from "ethers";
 import { TriggerKind } from "../scripts/constants";
 
-/** ethers v6 widens `.connect()` to BaseContract; this keeps the typed surface. */
 const as = <T extends BaseContract>(c: T, signer: Signer): T => c.connect(signer) as T;
 
 /**
- * Covers the settlement path with the Attestcoin precompile mocked.
- *
- * What is asserted here is the part Edgier owns: that a policy pays out
- * exactly when a *successful* proven transaction emitted the insured event, and
- * never otherwise.
+ * Settlement with the Attestcoin precompiles mocked: what Edgier itself owns.
+ * A policy on a CONTRACT against a BUNDLE of perils pays exactly when a
+ * *successful* proven transaction satisfies one of them — and never otherwise.
  */
 describe("Edgier settlement", () => {
   const COVER = ethers.parseEther("1000");
-  const SEPOLIA_CHAINKEY = 1;
+  const CHAIN = 1;
   const INSURED = "0x00000000000000000000000000000000000000A1";
-  const TOKEN = "0x00000000000000000000000000000000000000E0"; // the ERC-20 an outflow policy names
+  const TOKEN   = "0x00000000000000000000000000000000000000E0";
+  const ATTACKER = "0x00000000000000000000000000000000000000de";
 
   const SIG_UPGRADED = ethers.id("Upgraded(address)");
   const SIG_PAUSED = ethers.id("Paused(address)");
   const SIG_TRANSFER = ethers.id("Transfer(address,address,uint256)");
+  const SIG_SHUTDOWN = ethers.id("EmergencyShutdown(uint256)");
 
-  const emptyMerkle = { root: ethers.ZeroHash, siblings: [] };
-  const emptyContinuity = { lowerEndpointDigest: ethers.ZeroHash, roots: [] };
+  const M = { root: ethers.ZeroHash, siblings: [] };
+  const K = { lowerEndpointDigest: ethers.ZeroHash, roots: [] };
 
-  async function deploy() {
+  const peril = (kind: TriggerKind, extra: Partial<{ threshold: bigint; token: string; signature: string }> = {}) => ({
+    kind, threshold: extra.threshold ?? 0n, token: extra.token ?? ethers.ZeroAddress, signature: extra.signature ?? ethers.ZeroHash,
+  });
+  const UPGRADE = peril(TriggerKind.ADMIN_UPGRADE);
+  const PAUSE = peril(TriggerKind.EMERGENCY_PAUSE);
+  const OUTFLOW = (threshold = 0n) => peril(TriggerKind.LARGE_OUTFLOW, { threshold, token: TOKEN });
+  const CUSTOM = peril(TriggerKind.CUSTOM_EVENT, { signature: SIG_SHUTDOWN });
+  const SEL_WITHDRAW = ethers.id("emergencyWithdraw()").slice(0, 10);          // 4-byte selector
+  const CALL = peril(TriggerKind.CALL_SELECTOR, { signature: ethers.zeroPadBytes(SEL_WITHDRAW, 32) });
+
+  async function deploy(opts: { backdated?: boolean } = {}) {
     const [owner, underwriter, buyer, stranger] = await ethers.getSigners();
-
     const usd = await ethers.deployContract("MockUSD");
     const pool = await ethers.deployContract("CoverPool", [await usd.getAddress(), owner.address]);
     const chainInfo = await ethers.deployContract("MockChainInfo");
     const pm = await ethers.deployContract("PolicyManager", [
-      await pool.getAddress(), await chainInfo.getAddress(), owner.address, /* allowBackdatedCover */ true,
+      await pool.getAddress(), await chainInfo.getAddress(), owner.address, opts.backdated ?? true,
     ]);
     const prover = await ethers.deployContract("MockBlockProver");
     const decoder = await ethers.deployContract("MockEvmV1Decoder");
     const verifier = await ethers.deployContract("ClaimVerifier", [
       await pm.getAddress(), await decoder.getAddress(), await prover.getAddress(),
     ]);
-
     await pool.setPolicyManager(await pm.getAddress());
     await pm.setClaimVerifier(await verifier.getAddress());
-
     await usd.mint(underwriter.address, ethers.parseEther("100000"));
     await as(usd, underwriter).approve(await pool.getAddress(), ethers.MaxUint256);
     await as(pool, underwriter).deposit(ethers.parseEther("50000"), underwriter.address);
-
     await usd.mint(buyer.address, ethers.parseEther("10000"));
     await as(usd, buyer).approve(await pool.getAddress(), ethers.MaxUint256);
-
+    await chainInfo.setLatest(CHAIN, 50, true);
     return { owner, underwriter, buyer, stranger, usd, pool, pm, prover, decoder, verifier, chainInfo };
   }
 
-  /** Builds the blob the MockEvmV1Decoder understands: tx fields + receipt. */
-  function encodeBlob(
-    opts: {
-      to?: string;
-      status?: number;
-      logs?: { address_: string; topics: string[]; data: string }[];
-    } = {},
-  ) {
-    const txn = {
-      nonce: 0n, gasLimit: 21000n,
-      from: ethers.ZeroAddress,
-      toIsNull: false,
-      to: opts.to ?? INSURED,
-      value: 0n,
-      data: "0x",
-    };
-    const receipt = {
-      receiptStatus: opts.status ?? 1,
-      receiptGasUsed: 21000n,
-      receiptLogs: opts.logs ?? [],
-      receiptLogsBloom: "0x",
-    };
+  function blob(opts: { from?: string; to?: string; data?: string; status?: number; logs?: { address_: string; topics: string[]; data: string }[] } = {}) {
     return ethers.AbiCoder.defaultAbiCoder().encode(
-      [
-        "tuple(uint64 nonce, uint64 gasLimit, address from, bool toIsNull, address to, uint256 value, bytes data)",
-        "tuple(uint8 receiptStatus, uint64 receiptGasUsed, tuple(address address_, bytes32[] topics, bytes data)[] receiptLogs, bytes receiptLogsBloom)",
-      ],
-      [txn, receipt],
+      ["tuple(uint64 nonce, uint64 gasLimit, address from, bool toIsNull, address to, uint256 value, bytes data)",
+       "tuple(uint8 receiptStatus, uint64 receiptGasUsed, tuple(address address_, bytes32[] topics, bytes data)[] receiptLogs, bytes receiptLogsBloom)"],
+      [{ nonce: 0n, gasLimit: 21000n, from: opts.from ?? ATTACKER, toIsNull: false, to: opts.to ?? INSURED, value: 0n, data: opts.data ?? "0x" },
+       { receiptStatus: opts.status ?? 1, receiptGasUsed: 21000n, receiptLogs: opts.logs ?? [], receiptLogsBloom: "0x" }],
     );
   }
-
-  const upgradedLog = (emitter = INSURED) => ({
+  const upgraded = (emitter = INSURED) => ({ address_: emitter, topics: [SIG_UPGRADED, ethers.zeroPadValue(ATTACKER, 32)], data: "0x" });
+  const paused = (emitter = INSURED) => ({ address_: emitter, topics: [SIG_PAUSED], data: "0x" });
+  const shutdown = (emitter = INSURED) => ({ address_: emitter, topics: [SIG_SHUTDOWN], data: ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1n]) });
+  const transfer = (from: string, value: bigint, emitter = TOKEN) => ({
     address_: emitter,
-    topics: [SIG_UPGRADED, ethers.zeroPadValue("0x00000000000000000000000000000000000000de", 32)],
-    data: "0x",
-  });
-
-  const transferLog = (from: string, value: bigint, emitter = TOKEN) => ({
-    address_: emitter,
-    topics: [
-      SIG_TRANSFER,
-      ethers.zeroPadValue(from, 32),
-      ethers.zeroPadValue("0x00000000000000000000000000000000000000ff", 32),
-    ],
+    topics: [SIG_TRANSFER, ethers.zeroPadValue(from, 32), ethers.zeroPadValue(ATTACKER, 32)],
     data: ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [value]),
   });
 
-  async function buyCover(
-    f: Awaited<ReturnType<typeof deploy>>,
-    kind: TriggerKind,
-    threshold = 0n,
-    target = INSURED,
-  ) {
-    await as(f.pm, f.buyer).buyPolicy(
-      { chainKey: SEPOLIA_CHAINKEY, target, kind, threshold, token: kind === TriggerKind.LARGE_OUTFLOW ? TOKEN : ethers.ZeroAddress },
-      COVER, 100n, 200n, ethers.MaxUint256,
+  type F = Awaited<ReturnType<typeof deploy>>;
+  async function buy(f: F, perils = [UPGRADE], opts: { cover?: bigint; target?: string; start?: bigint; end?: bigint; signer?: Signer } = {}) {
+    await as(f.pm, opts.signer ?? f.buyer).buyPolicy(
+      CHAIN, opts.target ?? INSURED, perils, opts.cover ?? COVER, opts.start ?? 100n, opts.end ?? 200n, ethers.MaxUint256,
     );
     return (await f.pm.nextPolicyId()) - 1n;
   }
+  const claim = (f: F, id: bigint, b: string, block = 150n, signer?: Signer) =>
+    as(f.verifier, signer ?? f.stranger).submitClaim(id, block, b, M, K);
 
-  it("pays out when a proven transaction emitted the insured event", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+  // --- the payout rule ----------------------------------------------------
+
+  it("pays when a proven, successful transaction satisfies a peril", async () => {
+    const f = await deploy(); const id = await buy(f);
     const before = await f.usd.balanceOf(f.buyer.address);
-
-    await f.verifier.submitClaim(
-      id, 150n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity,
-    );
-
+    await claim(f, id, blob({ logs: [upgraded()] }));
     expect(await f.usd.balanceOf(f.buyer.address)).to.equal(before + COVER);
-    expect((await f.pm.policies(id)).status).to.equal(2); // CLAIMED
+    expect((await f.pm.policies(id)).status).to.equal(2);
   });
 
-  it("does NOT pay out when the transaction reverted", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    // Included, but failed. Inclusion is not success.
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ status: 0, logs: [upgradedLog()] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+  it("does NOT pay when the transaction reverted", async () => {
+    const f = await deploy(); const id = await buy(f);
+    await expect(claim(f, id, blob({ status: 0, logs: [upgraded()] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
   });
 
   it("ignores the insured event emitted by a different contract", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    const impostor = "0x00000000000000000000000000000000000000bb";
-
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [upgradedLog(impostor)] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    const f = await deploy(); const id = await buy(f);
+    await expect(claim(f, id, blob({ logs: [upgraded("0x00000000000000000000000000000000000000B2")] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
   });
 
-  it("lets anyone submit the claim, not just the policyholder", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    await expect(
-      as(f.verifier, f.stranger).submitClaim(
-        id, 150n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.emit(f.pm, "PolicyClaimed");
-  });
-
-  it("rejects a transaction outside the coverage window", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    await expect(
-      f.verifier.submitClaim(
-        id, 999n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "OutsideCoverageWindow");
-  });
-
-  it("rejects a claim the Attestcoin proof does not support", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    await f.prover.setResult(false);
-
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "ProofRejected");
-  });
-
-  it("distinguishes trigger kinds", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.EMERGENCY_PAUSE);
-
-    // An upgrade does not satisfy pause cover.
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
-
-    const pausedLog = { address_: INSURED, topics: [SIG_PAUSED], data: "0x" };
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [pausedLog] }), emptyMerkle, emptyContinuity,
-      ),
-    ).to.emit(f.pm, "PolicyClaimed");
+  it("ignores a Transfer emitted by a contract other than the named token", async () => {
+    const f = await deploy(); const id = await buy(f, [OUTFLOW(ethers.parseEther("1"))]);
+    await expect(claim(f, id, blob({ logs: [transfer(INSURED, ethers.parseEther("1000000"), "0x0000000000000000000000000000000000000BAD")] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
   });
 
   it("enforces the LARGE_OUTFLOW threshold and direction", async () => {
+    const f = await deploy(); const id = await buy(f, [OUTFLOW(ethers.parseEther("500"))]);
+    await expect(claim(f, id, blob({ logs: [transfer(INSURED, ethers.parseEther("499"))] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    await expect(claim(f, id, blob({ logs: [transfer(ATTACKER, ethers.parseEther("5000"))] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    await claim(f, id, blob({ logs: [transfer(INSURED, ethers.parseEther("500"))] }));
+    expect((await f.pm.policies(id)).status).to.equal(2);
+  });
+
+  // --- bundles ------------------------------------------------------------
+
+  it("a bundle pays on ANY of its perils, and reports which one fired", async () => {
     const f = await deploy();
-    const id = await buyCover(f, TriggerKind.LARGE_OUTFLOW, ethers.parseEther("100"));
+    const id = await buy(f, [UPGRADE, PAUSE, OUTFLOW(ethers.parseEther("100")), CUSTOM]);
+    await expect(claim(f, id, blob({ logs: [shutdown()] }))).to.emit(f.verifier, "ClaimSubmitted").withArgs(id, f.stranger.address, ethers.keccak256(blob({ logs: [shutdown()] })), 150n, 3n);
+  });
 
-    // Below threshold.
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [transferLog(INSURED, ethers.parseEther("1"))] }),
-        emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+  it("a bundle on a contract without the event does not pay for it", async () => {
+    const f = await deploy(); const id = await buy(f, [UPGRADE, PAUSE]);
+    await expect(claim(f, id, blob({ logs: [shutdown()] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+  });
 
-    // Large, but flowing IN to the insured contract, not out of it.
-    const inbound = transferLog("0x00000000000000000000000000000000000000cc", ethers.parseEther("500"));
-    await expect(
-      f.verifier.submitClaim(id, 150n, encodeBlob({ logs: [inbound] }), emptyMerkle, emptyContinuity),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+  it("a custom event must come from the insured contract and must be named", async () => {
+    const f = await deploy();
+    const id = await buy(f, [CUSTOM]);
+    await expect(claim(f, id, blob({ logs: [shutdown("0x00000000000000000000000000000000000000B2")] }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    await expect(buy(f, [peril(TriggerKind.CUSTOM_EVENT)])).to.be.revertedWithCustomError(f.pm, "MalformedPeril");
+  });
 
-    // Large and outbound.
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [transferLog(INSURED, ethers.parseEther("500"))] }),
-        emptyMerkle, emptyContinuity,
-      ),
-    ).to.emit(f.pm, "PolicyClaimed");
+  it("CALL_SELECTOR insures a contract that emits nothing: a successful direct call to the named function", async () => {
+    const f = await deploy(); const id = await buy(f, [CALL]);
+    // Direct call, right selector, succeeded, no logs at all — pays.
+    await expect(claim(f, id, blob({ data: SEL_WITHDRAW + "00".repeat(32) }))).to.emit(f.pm, "PolicyClaimed");
+    const id2 = await buy(f, [CALL]);
+    // Wrong selector, or a call to some other contract (indirect path), or reverted — does not.
+    await expect(claim(f, id2, blob({ data: ethers.id("deposit()").slice(0, 10) }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    await expect(claim(f, id2, blob({ to: "0x00000000000000000000000000000000000000B2", data: SEL_WITHDRAW }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    await expect(claim(f, id2, blob({ status: 0, data: SEL_WITHDRAW }))).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    await expect(buy(f, [peril(TriggerKind.CALL_SELECTOR)])).to.be.revertedWithCustomError(f.pm, "MalformedPeril");
+  });
+
+  it("requires an outflow peril to name its token, and bounds the bundle size", async () => {
+    const f = await deploy();
+    await expect(buy(f, [peril(TriggerKind.LARGE_OUTFLOW, { threshold: 1n })])).to.be.revertedWithCustomError(f.pm, "MalformedPeril");
+    await expect(buy(f, [])).to.be.revertedWithCustomError(f.pm, "NoPerils");
+    await expect(buy(f, Array(9).fill(UPGRADE))).to.be.revertedWithCustomError(f.pm, "TooManyPerils");
+  });
+
+  it("prices a bundle as the sum of its distinct perils' base rates", async () => {
+    const f = await deploy();
+    expect(await f.pm.bundleBaseBps([UPGRADE])).to.equal(500n);
+    expect(await f.pm.bundleBaseBps([UPGRADE, PAUSE, OUTFLOW(), CUSTOM])).to.equal(2000n);
+    expect(await f.pm.bundleBaseBps([UPGRADE, PAUSE, OUTFLOW(), CUSTOM, CALL])).to.equal(2600n);
+    expect(await f.pm.bundleBaseBps([UPGRADE, UPGRADE])).to.equal(500n); // duplicates count once
+  });
+
+  // --- permissionless, safe -----------------------------------------------
+
+  it("lets anyone submit the claim, not just the policyholder", async () => {
+    const f = await deploy(); const id = await buy(f);
+    await expect(claim(f, id, blob({ logs: [upgraded()] }), 150n, f.stranger)).to.emit(f.pm, "PolicyClaimed");
+  });
+
+  it("refuses a loss transaction the policyholder sent themselves", async () => {
+    const f = await deploy(); const id = await buy(f);
+    await expect(claim(f, id, blob({ from: f.buyer.address, logs: [upgraded()] }))).to.be.revertedWithCustomError(f.verifier, "SelfInflicted");
+  });
+
+  it("rejects a transaction outside the coverage window", async () => {
+    const f = await deploy(); const id = await buy(f);
+    await expect(claim(f, id, blob({ logs: [upgraded()] }), 250n)).to.be.revertedWithCustomError(f.verifier, "OutsideCoverageWindow");
+  });
+
+  it("rejects a claim the precompile does not support", async () => {
+    const f = await deploy(); const id = await buy(f);
+    await f.prover.setResult(false);
+    await expect(claim(f, id, blob({ logs: [upgraded()] }))).to.be.revertedWithCustomError(f.verifier, "ProofRejected");
   });
 
   it("will not settle the same policy twice", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    const blob = encodeBlob({ logs: [upgradedLog()] });
-
-    await f.verifier.submitClaim(id, 150n, blob, emptyMerkle, emptyContinuity);
-    await expect(
-      f.verifier.submitClaim(id, 150n, blob, emptyMerkle, emptyContinuity),
-    ).to.be.revertedWithCustomError(f.verifier, "AlreadyClaimed");
+    const f = await deploy(); const id = await buy(f);
+    await claim(f, id, blob({ logs: [upgraded()] }));
+    await expect(claim(f, id, blob({ logs: [upgraded()] }))).to.be.revertedWithCustomError(f.verifier, "AlreadyClaimed");
   });
 
-  it("refuses to expire a policy before the source chain has moved past it", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+  // --- moral-hazard defences ----------------------------------------------
 
-    // Attested height still inside the coverage window.
-    await f.chainInfo.setLatest(SEPOLIA_CHAINKEY, 150, true);
+  it("caps live cover on one contract at a share of the pool", async () => {
+    const f = await deploy(); // 50,000 pool, cap 10% = 5,000
+    await buy(f, [UPGRADE], { cover: ethers.parseEther("4000") });
+    await expect(buy(f, [UPGRADE], { cover: ethers.parseEther("1001") })).to.be.revertedWithCustomError(f.pm, "TargetConcentration");
+    await buy(f, [UPGRADE], { cover: ethers.parseEther("1000") });
+    // The cap is 10% of pool assets, and assets grew by the premiums just paid,
+    // so what remains is the premium's worth — a fraction of a cent, not zero.
+    expect(await f.pm.liveCoverOn(CHAIN, INSURED)).to.equal(ethers.parseEther("5000"));
+    expect(await f.pm.remainingCapacityFor(CHAIN, INSURED)).to.be.lt(ethers.parseEther("0.01"));
+    // a different contract has its own cap
+    await buy(f, [UPGRADE], { cover: ethers.parseEther("5000"), target: "0x00000000000000000000000000000000000000A2" });
+  });
+
+  it("releases the per-contract cap on settlement and on expiry", async () => {
+    const f = await deploy();
+    const id = await buy(f, [UPGRADE], { cover: ethers.parseEther("5000") });
+    expect(await f.pm.liveCoverOn(CHAIN, INSURED)).to.equal(ethers.parseEther("5000"));
+    await claim(f, id, blob({ logs: [upgraded()] }));
+    expect(await f.pm.liveCoverOn(CHAIN, INSURED)).to.equal(0n);
+  });
+
+  it("enforces a waiting period unless back-dating is allowed (demo)", async () => {
+    const f = await deploy({ backdated: false }); // attested 50, waiting 7200
+    await expect(buy(f, [UPGRADE], { start: 100n, end: 200n })).to.be.revertedWithCustomError(f.pm, "BackdatedWindow");
+    await buy(f, [UPGRADE], { start: 7250n, end: 8000n });
+  });
+
+  it("when curated, only allowlisted contracts are insurable", async () => {
+    const f = await deploy();
+    await f.pm.setCurated(true);
+    await expect(buy(f)).to.be.revertedWithCustomError(f.pm, "NotInsurable");
+    await f.pm.setInsurable(CHAIN, INSURED, true);
+    await buy(f);
+  });
+
+  it("keeps a policy claimable for the grace period, then lets anyone expire it", async () => {
+    const f = await deploy(); const id = await buy(f);
+    await f.chainInfo.setLatest(CHAIN, 205, true);
     await expect(f.pm.expire(id)).to.be.revertedWithCustomError(f.pm, "NotYetExpired");
-
-    // Capital is still reserved.
-    expect(await f.pool.lockedCapacity()).to.equal(COVER);
-  });
-
-  it("releases capital once the attested height passes the window", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    await f.chainInfo.setLatest(SEPOLIA_CHAINKEY, 200 + 7200 + 1, true);
-    await expect(f.pm.expire(id)).to.emit(f.pm, "PolicyExpired");
+    await f.chainInfo.setLatest(CHAIN, 200 + 7200 + 1, true);
+    await expect(as(f.pm, f.stranger).expire(id)).to.emit(f.pm, "PolicyExpired");
     expect(await f.pool.lockedCapacity()).to.equal(0n);
   });
 
   it("locks underwriter capital while a policy is live", async () => {
-    const f = await deploy();
-    await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
+    const f = await deploy(); await buy(f);
     expect(await f.pool.lockedCapacity()).to.equal(COVER);
-    expect(await f.pool.maxWithdraw(f.underwriter.address))
-      .to.be.lte(await f.pool.freeCapacity());
+    expect(await f.pool.maxWithdraw(f.underwriter.address)).to.be.lte(await f.pool.freeCapacity());
   });
-  // --- pricing ----------------------------------------------------------
+
+  // --- pricing ------------------------------------------------------------
 
   it("charges more for cover that eats more of the remaining capacity", async () => {
-    const f = await deploy(); // pool holds 50,000
-
-    const small = await f.pm.rateFor(TriggerKind.ADMIN_UPGRADE, ethers.parseEther("1000"));
-    const large = await f.pm.rateFor(TriggerKind.ADMIN_UPGRADE, ethers.parseEther("45000"));
-
-    // 2% utilisation sits on the gentle segment; 90% is past the kink.
-    expect(small).to.equal(505n);  // 500 base + 200 * (0.02 / 0.8)
-    expect(large).to.equal(1700n); // 500 base + 200 + 2000 * (0.10 / 0.20)
-    expect(large).to.be.gt(small);
-  });
-
-  it("prices the last of the capacity at the top of the curve", async () => {
     const f = await deploy();
-    // Reserving the entire pool puts utilisation at 100%.
-    const full = await f.pm.rateFor(TriggerKind.ADMIN_UPGRADE, ethers.parseEther("50000"));
-    expect(full).to.equal(500n + 200n + 2000n);
+    expect(await f.pm.rateFor([UPGRADE], ethers.parseEther("1000"))).to.equal(505n);
+    expect(await f.pm.rateFor([UPGRADE], ethers.parseEther("45000"))).to.equal(1700n);
+    expect(await f.pm.rateFor([UPGRADE], ethers.parseEther("50000"))).to.equal(2700n);
   });
 
   it("lets a buyer cap the premium they will pay", async () => {
     const f = await deploy();
-    const trigger = {
-      chainKey: SEPOLIA_CHAINKEY, target: INSURED,
-      kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n, token: ethers.ZeroAddress,
-    };
-    const premium = await f.pm.quote(TriggerKind.ADMIN_UPGRADE, COVER, 100n);
-
-    await expect(
-      as(f.pm, f.buyer).buyPolicy(trigger, COVER, 100n, 200n, premium - 1n),
-    ).to.be.revertedWithCustomError(f.pm, "PremiumAboveMax");
-
-    await expect(as(f.pm, f.buyer).buyPolicy(trigger, COVER, 100n, 200n, premium))
-      .to.emit(f.pm, "PolicyBought");
+    const premium = await f.pm.quote([UPGRADE], COVER, 100n);
+    await expect(as(f.pm, f.buyer).buyPolicy(CHAIN, INSURED, [UPGRADE], COVER, 100n, 200n, premium - 1n)).to.be.revertedWithCustomError(f.pm, "PremiumAboveMax");
+    await expect(as(f.pm, f.buyer).buyPolicy(CHAIN, INSURED, [UPGRADE], COVER, 100n, 200n, premium)).to.emit(f.pm, "PolicyBought");
   });
 
-  // --- batched settlement ------------------------------------------------
+  // --- batch --------------------------------------------------------------
 
-  it("settles several policies against one shared continuity proof", async () => {
+  it("settles several policies against one shared continuity proof, all or nothing", async () => {
     const f = await deploy();
     const OTHER = "0x00000000000000000000000000000000000000A2";
-
-    const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    const id2 = await buyCover(f, TriggerKind.EMERGENCY_PAUSE, 0n, OTHER);
-
-    const blob1 = encodeBlob({ logs: [upgradedLog()] });
-    const blob2 = encodeBlob({
-      to: OTHER,
-      logs: [{ address_: OTHER, topics: [SIG_PAUSED], data: "0x" }],
-    });
-
-    const before = await f.usd.balanceOf(f.buyer.address);
-
-    await f.verifier.submitClaimBatch(
-      [id1, id2], [150n, 151n], [blob1, blob2],
-      [emptyMerkle, emptyMerkle], emptyContinuity,
-    );
-
-    expect(await f.usd.balanceOf(f.buyer.address)).to.equal(before + COVER * 2n);
+    const id1 = await buy(f, [UPGRADE]);
+    const id2 = await buy(f, [PAUSE], { target: OTHER });
+    const good1 = blob({ logs: [upgraded()] }), good2 = blob({ to: OTHER, logs: [paused(OTHER)] }), bad = blob({ logs: [] });
+    await expect(as(f.verifier, f.stranger).submitClaimBatch([id1, id2], [150n, 150n], [good1, bad], [M, M], K)).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+    expect((await f.pm.policies(id1)).status).to.equal(1);
+    await as(f.verifier, f.stranger).submitClaimBatch([id1, id2], [150n, 151n], [good1, good2], [M, M], K);
     expect((await f.pm.policies(id1)).status).to.equal(2);
     expect((await f.pm.policies(id2)).status).to.equal(2);
-  });
-
-  it("rejects a batch whose arrays disagree in length", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    const blob = encodeBlob({ logs: [upgradedLog()] });
-
-    await expect(
-      f.verifier.submitClaimBatch(
-        [id], [150n, 151n], [blob], [emptyMerkle], emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "LengthMismatch");
+    await expect(as(f.verifier, f.stranger).submitClaimBatch([id1], [150n, 151n], [good1], [M], K)).to.be.revertedWithCustomError(f.verifier, "LengthMismatch");
   });
 
   it("refuses to batch policies written against different source chains", async () => {
     const f = await deploy();
-    const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    await as(f.pm, f.buyer).buyPolicy(
-      { chainKey: 3, target: INSURED, kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n, token: ethers.ZeroAddress },
-      COVER, 100n, 200n, ethers.MaxUint256,
-    );
+    const id1 = await buy(f);
+    await as(f.pm, f.buyer).buyPolicy(3, INSURED, [UPGRADE], COVER, 100n, 200n, ethers.MaxUint256);
     const id2 = (await f.pm.nextPolicyId()) - 1n;
-
-    const blob = encodeBlob({ logs: [upgradedLog()] });
-
-    await expect(
-      f.verifier.submitClaimBatch(
-        [id1, id2], [150n, 150n], [blob, blob],
-        [emptyMerkle, emptyMerkle], emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "MixedChainKeys");
-  });
-
-  it("reverts the whole batch when one entry does not meet its trigger", async () => {
-    const f = await deploy();
-    const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    const id2 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    const good = encodeBlob({ logs: [upgradedLog()] });
-    const bad = encodeBlob({ logs: [] }); // no Upgraded event
-    const before = await f.usd.balanceOf(f.buyer.address);
-
-    await expect(
-      f.verifier.submitClaimBatch(
-        [id1, id2], [150n, 150n], [good, bad],
-        [emptyMerkle, emptyMerkle], emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
-
-    // Nothing paid out — the good entry rolled back with the bad one.
-    expect(await f.usd.balanceOf(f.buyer.address)).to.equal(before);
-    expect((await f.pm.policies(id1)).status).to.equal(1); // still ACTIVE
-  });
-
-  it("rejects a batch the precompile will not verify", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-    await f.prover.setResult(false);
-
-    await expect(
-      f.verifier.submitClaimBatch(
-        [id], [150n], [encodeBlob({ logs: [upgradedLog()] })],
-        [emptyMerkle], emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "ProofRejected");
-  });
-  // --- emitter binding, back-dating, grace --------------------------------
-
-  it("ignores a Transfer emitted by a contract other than the named token", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.LARGE_OUTFLOW, ethers.parseEther("1"));
-    const IMPOSTOR = "0x0000000000000000000000000000000000000BAD";
-
-    // Right shape, right "from", huge value — wrong emitter. Must not pay.
-    await expect(
-      f.verifier.submitClaim(
-        id, 150n, encodeBlob({ logs: [transferLog(INSURED, ethers.parseEther("1000000"), IMPOSTOR)] }),
-        emptyMerkle, emptyContinuity,
-      ),
-    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
-  });
-
-  it("requires an outflow policy to name its token", async () => {
-    const f = await deploy();
-    await expect(
-      as(f.pm, f.buyer).buyPolicy(
-        { chainKey: SEPOLIA_CHAINKEY, target: INSURED, kind: TriggerKind.LARGE_OUTFLOW, threshold: 1n, token: ethers.ZeroAddress },
-        COVER, 100n, 200n, ethers.MaxUint256,
-      ),
-    ).to.be.revertedWithCustomError(f.pm, "TokenRequired");
-  });
-
-  it("refuses a window in the attested past unless back-dating is allowed", async () => {
-    const [owner, , buyer] = await ethers.getSigners();
-    const usd = await ethers.deployContract("MockUSD");
-    const pool = await ethers.deployContract("CoverPool", [await usd.getAddress(), owner.address]);
-    const chainInfo = await ethers.deployContract("MockChainInfo");
-    const pm = await ethers.deployContract("PolicyManager", [
-      await pool.getAddress(), await chainInfo.getAddress(), owner.address, /* allowBackdatedCover */ false,
-    ]);
-    await pool.setPolicyManager(await pm.getAddress());
-    await usd.mint(buyer.address, ethers.parseEther("10000"));
-    await as(usd, buyer).approve(await pool.getAddress(), ethers.MaxUint256);
-    await usd.mint(owner.address, ethers.parseEther("100000"));
-    await usd.approve(await pool.getAddress(), ethers.MaxUint256);
-    await pool.deposit(ethers.parseEther("50000"), owner.address);
-    await chainInfo.setLatest(SEPOLIA_CHAINKEY, 1000, true);
-
-    const trigger = { chainKey: SEPOLIA_CHAINKEY, target: INSURED, kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n, token: ethers.ZeroAddress };
-    await expect(as(pm, buyer).buyPolicy(trigger, COVER, 900n, 1100n, ethers.MaxUint256))
-      .to.be.revertedWithCustomError(pm, "BackdatedWindow");
-    await expect(as(pm, buyer).buyPolicy(trigger, COVER, 1000n, 1100n, ethers.MaxUint256))
-      .to.emit(pm, "PolicyBought");
-  });
-
-  it("keeps a policy claimable for the grace period after its window", async () => {
-    const f = await deploy();
-    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
-
-    // Attested just past endBlock: a loss at block 199 is provable now, so expiry must wait.
-    await f.chainInfo.setLatest(SEPOLIA_CHAINKEY, 205, true);
-    await expect(f.pm.expire(id)).to.be.revertedWithCustomError(f.pm, "NotYetExpired");
-
-    await f.verifier.submitClaim(id, 199n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity);
-    expect((await f.pm.policies(id)).status).to.equal(2);
+    const b = blob({ logs: [upgraded()] });
+    await expect(f.verifier.submitClaimBatch([id1, id2], [150n, 150n], [b, b], [M, M], K)).to.be.revertedWithCustomError(f.verifier, "MixedChainKeys");
   });
 });

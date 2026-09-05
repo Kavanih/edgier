@@ -67,8 +67,8 @@ export function AiUnderwriter({
       {draft && !draft.raw && (
         <div className="ai-out">
           <div className="ai-row">
-            <span className="k">trigger</span>
-            <span className="v">{KINDS[draft.kind ?? 0]?.label ?? "?"}</span>
+            <span className="k">perils</span>
+            <span className="v">{(Array.isArray(draft.kinds) ? draft.kinds : [draft.kind ?? 0]).map((k) => KINDS[Number(k)]?.label ?? "?").join(", ")}</span>
           </div>
           <div className="ai-row"><span className="k">cover</span><span className="v">{draft.coverAmount} mUSD</span></div>
           <div className="ai-row"><span className="k">window</span><span className="v">{draft.windowBlocks} blocks</span></div>

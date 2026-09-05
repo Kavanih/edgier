@@ -1,18 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {CoverPool} from "./CoverPool.sol";
 import {TriggerLib} from "./triggers/TriggerLib.sol";
 import {IChainInfo} from "./interfaces/IAttestcoin.sol";
 
 /// @title PolicyManager
-/// @notice Sells parametric cover written against a contract on Ethereum.
-/// @dev Holds no settlement logic of its own — only the ClaimVerifier, which
-///      settles against an Attestcoin proof, may mark a policy claimed.
+/// @notice Sells cover on an EVM contract against a bundle of perils, prices it,
+///         and tracks status. Holds no settlement logic — only the ClaimVerifier,
+///         which settles against an Attestcoin proof, may mark a policy claimed.
+///
+/// @dev Moral hazard is the central design problem of parametric cover: the
+///      party who controls the insured contract can cause the insured event. A
+///      receipt cannot tell an admin's own upgrade from a stolen key's. So the
+///      product insures USERS against PROTOCOLS, and this contract carries the
+///      four defences that make that workable without a claims committee:
+///        - a concentration cap per insured contract (blast radius)
+///        - a waiting period before cover starts (no buy-Monday-rug-Tuesday)
+///        - an optional owner-curated allowlist of insurable contracts
+///        - premiums that rise with pool utilisation
+///      The fifth — a loss transaction sent by the policyholder never pays — is
+///      enforced in ClaimVerifier, where the transaction's sender is known.
 contract PolicyManager is Ownable {
-    using TriggerLib for TriggerLib.Trigger;
+    using TriggerLib for TriggerLib.Peril;
 
     enum Status { NONE, ACTIVE, CLAIMED, EXPIRED }
 
@@ -20,87 +31,84 @@ contract PolicyManager is Ownable {
         address holder;
         uint256 coverAmount;
         uint256 premiumPaid;
-        // Coverage window is expressed in SOURCE CHAIN block numbers, so that a
-        // claim's validity is decided by the same proof that decides the loss.
+        // Coverage window in SOURCE-CHAIN blocks: the proof that shows the loss
+        // also shows its block, so timing and substance are decided together.
         uint256 startBlock;
         uint256 endBlock;
-        TriggerLib.Trigger trigger;
+        uint64 chainKey;         // Attestcoin source-chain id
+        address target;          // the insured contract
+        TriggerLib.Peril[] perils;
         Status status;
     }
 
     CoverPool public immutable pool;
-    address public claimVerifier;
-
-    /// @dev Creditcoin's view of source-chain attestation state. Used so that
-    ///      expiry is decided by attested facts rather than by the caller.
     IChainInfo public immutable chainInfo;
+    address public claimVerifier;
 
     uint256 public nextPolicyId = 1;
     mapping(uint256 => Policy) private _policies;
 
-    /// @notice Whether cover may be written on a window that lies in the source
-    ///         chain's attested past.
-    /// @dev In production this must be false: a back-dated window lets anyone
-    ///      buy cover on a loss that is already known and claim it at once. The
-    ///      testnet deployment sets it true on purpose, so the five historical
-    ///      mainnet incidents can be insured and settled as a demonstration.
+    // --- moral-hazard defences -------------------------------------------
+
+    /// @notice Demo switch. When true, windows may start in the attested past and
+    ///         the waiting period is skipped, so historical incidents can be insured.
+    ///         MUST be false in production.
     bool public immutable allowBackdatedCover;
 
-    /// @notice Source-chain blocks after `endBlock` during which a claim can still
-    ///         be submitted before anyone may expire the policy.
-    /// @dev Without a grace period a loss landing just before `endBlock` could be
-    ///      voided by front-running the claim with `expire()` the moment the
-    ///      attestation that makes the loss provable also passes the window.
-    uint256 public constant CLAIM_GRACE_BLOCKS = 7_200; // ~1 day of Ethereum blocks
+    /// @notice Source-chain blocks after purchase before cover may start.
+    uint256 public waitingBlocks = 7_200;               // ~1 day
+
+    /// @notice Blocks after endBlock during which a claim may still be submitted.
+    uint256 public constant CLAIM_GRACE_BLOCKS = 7_200; // ~1 day
+
+    /// @notice Maximum live cover on one insured contract, as bps of pool assets.
+    uint256 public maxCoverPerTargetBps = 1_000;         // 10%
+    mapping(uint64 => mapping(address => uint256)) public liveCoverOn;
+
+    /// @notice When curated, only allowlisted contracts may be insured.
+    bool public curated;
+    mapping(uint64 => mapping(address => bool)) public insurable;
 
     // --- pricing ----------------------------------------------------------
     //
-    // Cover is a claim on scarce pool capital, so it is priced like one: a
-    // kinked utilisation curve, the same shape as an Aave interest-rate model.
-    //
-    //   utilisation u = (locked + thisPolicy) / totalAssets
-    //
-    //   u <= kink :  rate = base + slope1 * (u / kink)
-    //   u >  kink :  rate = base + slope1 + slope2 * (u - kink) / (1 - kink)
-    //
-    // Utilisation is measured AFTER reserving this policy's cover, so a buyer
-    // taking the last of the capacity pays for taking it. That both rations
-    // scarce capacity and pays underwriters most precisely when their capital
-    // is scarcest.
+    // Kinked utilisation curve, Aave-shaped. Utilisation is measured AFTER
+    // reserving this policy's cover, so the buyer taking the last of the
+    // capacity pays for taking it. A bundle's base rate is the sum of its
+    // distinct perils' base rates: more perils, more premium.
 
-    /// @notice Annualised floor rate in basis points, per trigger kind.
-    /// @dev The kind-specific part of the price: how dangerous this event is,
-    ///      independent of how much capacity is left.
     mapping(TriggerLib.Kind => uint256) public baseRateBps;
-
-    /// @notice Utilisation at which the curve steepens, in WAD (0.8e18 = 80%).
     uint256 public kinkWad = 0.8e18;
-    /// @notice Basis points added across the whole gentle segment (0 … kink).
     uint256 public slope1Bps = 200;
-    /// @notice Basis points added across the steep segment (kink … 100%).
     uint256 public slope2Bps = 2_000;
 
     uint256 public constant BPS = 10_000;
     uint256 public constant WAD = 1e18;
-    uint256 public constant BLOCKS_PER_YEAR = 2_628_000; // ~12s Ethereum blocks
+    uint256 public constant BLOCKS_PER_YEAR = 2_628_000;
 
-    event PolicyBought(uint256 indexed policyId, address indexed holder, uint256 coverAmount, uint256 premium);
-    event PolicyClaimed(uint256 indexed policyId, address indexed holder, uint256 payout, bytes32 txId);
+    event PolicyBought(uint256 indexed policyId, address indexed holder, uint64 chainKey, address indexed target, uint256 coverAmount, uint256 premium, uint256 perils);
+    event PolicyClaimed(uint256 indexed policyId, address indexed holder, uint256 payout, bytes32 txId, uint256 perilIndex);
     event PolicyExpired(uint256 indexed policyId);
     event ClaimVerifierSet(address indexed verifier);
     event BaseRateSet(TriggerLib.Kind kind, uint256 bps);
     event CurveSet(uint256 kinkWad, uint256 slope1Bps, uint256 slope2Bps);
+    event LimitsSet(uint256 waitingBlocks, uint256 maxCoverPerTargetBps);
+    event CuratedSet(bool curated);
+    event InsurableSet(uint64 chainKey, address indexed target, bool insurable);
 
     error NotClaimVerifier();
     error PolicyNotActive();
     error BadWindow();
     error ZeroCover();
-    error NotYetExpired(uint64 attestedHeight, uint256 endBlock);
+    error NotYetExpired(uint64 attestedHeight, uint256 claimableUntil);
     error NoAttestation();
     error BadCurve();
     error PremiumAboveMax(uint256 premium, uint256 maxPremium);
-    error BackdatedWindow(uint256 startBlock, uint64 attestedHeight);
-    error TokenRequired();
+    error BackdatedWindow(uint256 startBlock, uint256 earliestAllowed);
+    error NoPerils();
+    error TooManyPerils();
+    error MalformedPeril(uint256 index);
+    error NotInsurable(uint64 chainKey, address target);
+    error TargetConcentration(uint256 wouldBe, uint256 cap);
 
     modifier onlyClaimVerifier() {
         if (msg.sender != claimVerifier) revert NotClaimVerifier();
@@ -113,78 +121,85 @@ contract PolicyManager is Ownable {
         pool = pool_;
         chainInfo = chainInfo_;
         allowBackdatedCover = allowBackdatedCover_;
-        baseRateBps[TriggerLib.Kind.ADMIN_UPGRADE]   = 500; // 5%  annualised floor
-        baseRateBps[TriggerLib.Kind.EMERGENCY_PAUSE] = 300; // 3%
-        baseRateBps[TriggerLib.Kind.LARGE_OUTFLOW]   = 800; // 8%
+        baseRateBps[TriggerLib.Kind.ADMIN_UPGRADE]   = 500;
+        baseRateBps[TriggerLib.Kind.EMERGENCY_PAUSE] = 300;
+        baseRateBps[TriggerLib.Kind.LARGE_OUTFLOW]   = 800;
+        baseRateBps[TriggerLib.Kind.CUSTOM_EVENT]    = 400;
+        baseRateBps[TriggerLib.Kind.CALL_SELECTOR]   = 600;
     }
 
-    function setClaimVerifier(address v) external onlyOwner {
-        claimVerifier = v;
-        emit ClaimVerifierSet(v);
-    }
+    // --- admin ------------------------------------------------------------
 
-    function setBaseRate(TriggerLib.Kind kind, uint256 bps) external onlyOwner {
-        baseRateBps[kind] = bps;
-        emit BaseRateSet(kind, bps);
-    }
-
+    function setClaimVerifier(address v) external onlyOwner { claimVerifier = v; emit ClaimVerifierSet(v); }
+    function setBaseRate(TriggerLib.Kind kind, uint256 bps) external onlyOwner { baseRateBps[kind] = bps; emit BaseRateSet(kind, bps); }
     function setCurve(uint256 kinkWad_, uint256 slope1Bps_, uint256 slope2Bps_) external onlyOwner {
-        // A kink of 0 or 100% collapses one of the segments and divides by zero.
         if (kinkWad_ == 0 || kinkWad_ >= WAD) revert BadCurve();
-        kinkWad = kinkWad_;
-        slope1Bps = slope1Bps_;
-        slope2Bps = slope2Bps_;
+        kinkWad = kinkWad_; slope1Bps = slope1Bps_; slope2Bps = slope2Bps_;
         emit CurveSet(kinkWad_, slope1Bps_, slope2Bps_);
     }
-
-    function policies(uint256 id) external view returns (Policy memory) {
-        return _policies[id];
+    function setLimits(uint256 waitingBlocks_, uint256 maxCoverPerTargetBps_) external onlyOwner {
+        waitingBlocks = waitingBlocks_; maxCoverPerTargetBps = maxCoverPerTargetBps_;
+        emit LimitsSet(waitingBlocks_, maxCoverPerTargetBps_);
+    }
+    function setCurated(bool on) external onlyOwner { curated = on; emit CuratedSet(on); }
+    function setInsurable(uint64 chainKey, address target, bool on) external onlyOwner {
+        insurable[chainKey][target] = on; emit InsurableSet(chainKey, target, on);
     }
 
-    // --- quoting ----------------------------------------------------------
+    // --- views ------------------------------------------------------------
 
-    /// @notice Pool utilisation once `extraLocked` more capital is reserved, in WAD.
-    /// @dev Returns 100% for an empty or fully-committed pool, which prices the
-    ///      last of the capacity at the top of the curve rather than dividing by zero.
+    function policies(uint256 id) external view returns (Policy memory) { return _policies[id]; }
+
+    /// @notice Pool utilisation once `extraLocked` more is reserved, in WAD.
     function utilisationAfter(uint256 extraLocked) public view returns (uint256) {
         uint256 assets = pool.totalAssets();
         if (assets == 0) return WAD;
-
         uint256 locked = pool.lockedCapacity() + extraLocked;
         if (locked >= assets) return WAD;
-
         return (locked * WAD) / assets;
     }
 
-    /// @notice Annualised rate in basis points for this cover, at today's utilisation.
-    function rateFor(TriggerLib.Kind kind, uint256 coverAmount) public view returns (uint256) {
-        uint256 u = utilisationAfter(coverAmount);
-        uint256 kink = kinkWad;
-
-        if (u <= kink) {
-            return baseRateBps[kind] + (slope1Bps * u) / kink;
+    /// @notice Base rate of a bundle: the sum over its DISTINCT peril kinds.
+    function bundleBaseBps(TriggerLib.Peril[] memory perils) public view returns (uint256 bps) {
+        uint256 seen; // bitmask of kinds
+        for (uint256 i = 0; i < perils.length; i++) {
+            uint256 bit = 1 << uint256(perils[i].kind);
+            if (seen & bit != 0) continue;
+            seen |= bit;
+            bps += baseRateBps[perils[i].kind];
         }
-        return baseRateBps[kind] + slope1Bps + (slope2Bps * (u - kink)) / (WAD - kink);
     }
 
-    /// @notice Premium for a given cover amount over a window of source-chain blocks.
-    function quote(TriggerLib.Kind kind, uint256 coverAmount, uint256 blocks_)
-        public
-        view
-        returns (uint256)
+    /// @notice Annualised rate in bps for this bundle at today's utilisation.
+    function rateFor(TriggerLib.Peril[] memory perils, uint256 coverAmount) public view returns (uint256) {
+        uint256 u = utilisationAfter(coverAmount);
+        uint256 kink = kinkWad;
+        uint256 base = bundleBaseBps(perils);
+        if (u <= kink) return base + (slope1Bps * u) / kink;
+        return base + slope1Bps + (slope2Bps * (u - kink)) / (WAD - kink);
+    }
+
+    function quote(TriggerLib.Peril[] memory perils, uint256 coverAmount, uint256 blocks_)
+        public view returns (uint256)
     {
-        return (coverAmount * rateFor(kind, coverAmount) * blocks_) / (BPS * BLOCKS_PER_YEAR);
+        return (coverAmount * rateFor(perils, coverAmount) * blocks_) / (BPS * BLOCKS_PER_YEAR);
+    }
+
+    /// @notice The most cover this contract may still take on, given the cap.
+    function remainingCapacityFor(uint64 chainKey, address target) public view returns (uint256) {
+        uint256 cap = (pool.totalAssets() * maxCoverPerTargetBps) / BPS;
+        uint256 live = liveCoverOn[chainKey][target];
+        return live >= cap ? 0 : cap - live;
     }
 
     // --- buying -----------------------------------------------------------
 
-    /// @notice Buy cover. Reserves capital in the pool and pulls the premium.
-    /// @param maxPremium slippage guard. The quote moves with pool utilisation,
-    ///        so a policy bought in the same block as someone else's can cost
-    ///        more than the price the buyer was shown. Pass `type(uint256).max`
-    ///        to accept any price.
+    /// @notice Buy cover on `target` against `perils`; any one firing pays `coverAmount`.
+    /// @param maxPremium slippage guard — the quote moves with pool utilisation.
     function buyPolicy(
-        TriggerLib.Trigger calldata trigger,
+        uint64 chainKey,
+        address target,
+        TriggerLib.Peril[] calldata perils,
         uint256 coverAmount,
         uint256 startBlock,
         uint256 endBlock,
@@ -192,69 +207,73 @@ contract PolicyManager is Ownable {
     ) external returns (uint256 policyId) {
         if (coverAmount == 0) revert ZeroCover();
         if (endBlock <= startBlock) revert BadWindow();
-        if (trigger.kind == TriggerLib.Kind.LARGE_OUTFLOW && trigger.token == address(0)) revert TokenRequired();
+        if (perils.length == 0) revert NoPerils();
+        if (perils.length > TriggerLib.MAX_PERILS) revert TooManyPerils();
+        for (uint256 i = 0; i < perils.length; i++) {
+            if (!perils[i].isWellFormed()) revert MalformedPeril(i);
+        }
+        if (curated && !insurable[chainKey][target]) revert NotInsurable(chainKey, target);
 
-        // Cover starts no earlier than what Creditcoin has already attested, so a
-        // loss that is provable today cannot be insured today.
+        // Concentration: one contract may never be the whole pool's problem.
+        uint256 cap = (pool.totalAssets() * maxCoverPerTargetBps) / BPS;
+        uint256 wouldBe = liveCoverOn[chainKey][target] + coverAmount;
+        if (wouldBe > cap) revert TargetConcentration(wouldBe, cap);
+
+        // Waiting period: cover starts no earlier than the attested head plus a
+        // buffer, so a loss that is provable today — or planned for tomorrow —
+        // cannot be insured today. Skipped only under the demo switch.
         if (!allowBackdatedCover) {
-            IChainInfo.AttestedPoint memory latest =
-                chainInfo.get_latest_attestation_height_and_hash(trigger.chainKey);
+            IChainInfo.AttestedPoint memory latest = chainInfo.get_latest_attestation_height_and_hash(chainKey);
             if (!latest.exists) revert NoAttestation();
-            if (startBlock < latest.height) revert BackdatedWindow(startBlock, latest.height);
+            uint256 earliest = uint256(latest.height) + waitingBlocks;
+            if (startBlock < earliest) revert BackdatedWindow(startBlock, earliest);
         }
 
-        uint256 premium = quote(trigger.kind, coverAmount, endBlock - startBlock);
+        uint256 premium = quote(perils, coverAmount, endBlock - startBlock);
         if (premium > maxPremium) revert PremiumAboveMax(premium, maxPremium);
 
         pool.lockCapacity(coverAmount);
         pool.collectPremium(msg.sender, premium);
+        liveCoverOn[chainKey][target] = wouldBe;
 
         policyId = nextPolicyId++;
-        _policies[policyId] = Policy({
-            holder: msg.sender,
-            coverAmount: coverAmount,
-            premiumPaid: premium,
-            startBlock: startBlock,
-            endBlock: endBlock,
-            trigger: trigger,
-            status: Status.ACTIVE
-        });
+        Policy storage p = _policies[policyId];
+        p.holder = msg.sender;
+        p.coverAmount = coverAmount;
+        p.premiumPaid = premium;
+        p.startBlock = startBlock;
+        p.endBlock = endBlock;
+        p.chainKey = chainKey;
+        p.target = target;
+        for (uint256 i = 0; i < perils.length; i++) p.perils.push(perils[i]);
+        p.status = Status.ACTIVE;
 
-        emit PolicyBought(policyId, msg.sender, coverAmount, premium);
+        emit PolicyBought(policyId, msg.sender, chainKey, target, coverAmount, premium, perils.length);
     }
 
     // --- settlement -------------------------------------------------------
 
-    /// @notice Settle a policy. Reachable only once an Attestcoin proof has verified.
-    /// @param txId identity of the proven transaction, for the event trail.
-    function settle(uint256 policyId, bytes32 txId) external onlyClaimVerifier {
+    /// @notice Settle. Reachable only once an Attestcoin proof has verified.
+    function settle(uint256 policyId, bytes32 txId, uint256 perilIndex) external onlyClaimVerifier {
         Policy storage p = _policies[policyId];
         if (p.status != Status.ACTIVE) revert PolicyNotActive();
-
         p.status = Status.CLAIMED;
-        uint256 payout = p.coverAmount;
-
-        pool.payClaim(p.holder, payout);
-        emit PolicyClaimed(policyId, p.holder, payout, txId);
+        liveCoverOn[p.chainKey][p.target] -= p.coverAmount;
+        pool.payClaim(p.holder, p.coverAmount);
+        emit PolicyClaimed(policyId, p.holder, p.coverAmount, txId, perilIndex);
     }
 
-    /// @notice Release reserved capital once the coverage window has demonstrably
-    ///         passed without a loss. Permissionless.
-    /// @dev The source-chain height is read from the ChainInfo precompile, not
-    ///      supplied by the caller. An earlier version trusted a caller-provided
-    ///      height, which let anyone free an underwriter's capital early by
-    ///      lying about it.
+    /// @notice Release capital once the window plus grace has demonstrably passed.
+    ///         Permissionless; the height comes from the ChainInfo precompile.
     function expire(uint256 policyId) external {
         Policy storage p = _policies[policyId];
         if (p.status != Status.ACTIVE) revert PolicyNotActive();
-
-        IChainInfo.AttestedPoint memory latest =
-            chainInfo.get_latest_attestation_height_and_hash(p.trigger.chainKey);
+        IChainInfo.AttestedPoint memory latest = chainInfo.get_latest_attestation_height_and_hash(p.chainKey);
         if (!latest.exists) revert NoAttestation();
         uint256 claimableUntil = p.endBlock + CLAIM_GRACE_BLOCKS;
         if (latest.height <= claimableUntil) revert NotYetExpired(latest.height, claimableUntil);
-
         p.status = Status.EXPIRED;
+        liveCoverOn[p.chainKey][p.target] -= p.coverAmount;
         pool.releaseCapacity(p.coverAmount);
         emit PolicyExpired(policyId);
     }

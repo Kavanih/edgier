@@ -18,11 +18,11 @@ import { ProofClient } from "./proof";
 
 const CLAIM_VERIFIER_ABI = [
   "function submitClaim(uint256 policyId, uint64 headerNumber, bytes txBytes, (bytes32 root, (bytes32 hash, bool isLeft)[] siblings) merkleProof, (bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) external",
-  "function checkClaim(uint256 policyId, uint64 headerNumber, bytes txBytes, (bytes32 root, (bytes32 hash, bool isLeft)[] siblings) merkleProof, (bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) view returns (bool proofValid, bool triggerMet, bool inWindow)",
+  "function checkClaim(uint256 policyId, uint64 headerNumber, bytes txBytes, (bytes32 root, (bytes32 hash, bool isLeft)[] siblings) merkleProof, (bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) view returns (bool proofValid, bool triggerMet, bool inWindow, bool selfInflicted, int256 perilIndex)",
 ];
 const POLICY_MANAGER_ABI = [
   "function nextPolicyId() view returns (uint256)",
-  "function policies(uint256) view returns (tuple(address holder, uint256 coverAmount, uint256 premiumPaid, uint256 startBlock, uint256 endBlock, tuple(uint64 chainKey, address target, uint8 kind, uint256 threshold, address token) trigger, uint8 status))",
+  "function policies(uint256) view returns (tuple(address holder, uint256 coverAmount, uint256 premiumPaid, uint256 startBlock, uint256 endBlock, uint64 chainKey, address target, tuple(uint8 kind, uint256 threshold, address token, bytes32 signature)[] perils, uint8 status))",
 ];
 
 const SIG = {
@@ -36,9 +36,9 @@ const SCAN_INTERVAL_MS = 12_000;
 const MAX_BLOCKS_PER_TICK = 200;
 const MAX_ATTEMPTS = 3;
 
+interface Peril { kind: bigint; threshold: bigint; token: string; signature: string }
 interface Policy {
-  id: bigint; startBlock: bigint; endBlock: bigint;
-  trigger: { chainKey: bigint; target: string; kind: bigint; threshold: bigint; token: string };
+  id: bigint; startBlock: bigint; endBlock: bigint; chainKey: bigint; target: string; perils: Peril[];
 }
 
 async function main() {
@@ -60,33 +60,50 @@ async function main() {
     const out: Policy[] = [];
     for (let i = 1; i < total; i++) {
       const p = await policyManager.policies(i);
-      if (p.status !== ACTIVE || p.trigger.chainKey !== BigInt(config.chainKey)) continue;
-      out.push({ id: BigInt(i), startBlock: p.startBlock, endBlock: p.endBlock, trigger: p.trigger });
+      if (p.status !== ACTIVE || p.chainKey !== BigInt(config.chainKey)) continue;
+      out.push({ id: BigInt(i), startBlock: p.startBlock, endBlock: p.endBlock, chainKey: p.chainKey, target: p.target, perils: [...p.perils] });
     }
     return out;
   }
 
   /** Candidate transactions in [from, to]: exactly what the contract would match on. */
   async function findCandidates(from: number, to: number, policies: Policy[]): Promise<Set<string>> {
-    const targets = [...new Set(policies.map((p) => p.trigger.target.toLowerCase()))];
+    const targets = [...new Set(policies.map((p) => p.target.toLowerCase()))];
     const found = new Set<string>();
     if (targets.length === 0) return found;
 
-    // Upgraded / OwnershipTransferred / Paused emitted BY an insured contract.
+    // Upgraded / OwnershipTransferred / Paused / any custom signature, emitted BY an insured contract.
+    const customSigs = policies.flatMap((p) => p.perils.filter((x) => x.kind === 3n).map((x) => x.signature));
     const emitted = await proofs.sourceProvider.getLogs({
       fromBlock: from, toBlock: to, address: targets,
-      topics: [[SIG.UPGRADED, SIG.OWNERSHIP_TRANSFERRED, SIG.PAUSED]],
+      topics: [[SIG.UPGRADED, SIG.OWNERSHIP_TRANSFERRED, SIG.PAUSED, ...new Set(customSigs)]],
     });
     emitted.forEach((l) => found.add(l.transactionHash));
 
-    // Transfer FROM an insured contract, emitted by the policy's token.
-    const tokens = [...new Set(policies.filter((p) => p.trigger.kind === 2n).map((p) => p.trigger.token.toLowerCase()))];
+    // Transfer FROM an insured contract, emitted by a policy's token.
+    const tokens = [...new Set(policies.flatMap((p) => p.perils.filter((x) => x.kind === 2n).map((x) => x.token.toLowerCase())))];
     if (tokens.length) {
       const outflows = await proofs.sourceProvider.getLogs({
         fromBlock: from, toBlock: to, address: tokens,
         topics: [SIG.TRANSFER, targets.map((t) => zeroPadValue(t, 32))],
       });
       outflows.forEach((l) => found.add(l.transactionHash));
+    }
+    // Direct calls to an insured contract with a named selector (CALL_SELECTOR).
+    const selectors = new Map<string, Set<string>>(); // target -> selectors
+    for (const p of policies) for (const x of p.perils) if (x.kind === 4n) {
+      const t = p.target.toLowerCase(); if (!selectors.has(t)) selectors.set(t, new Set());
+      selectors.get(t)!.add(x.signature.slice(0, 10).toLowerCase());
+    }
+    if (selectors.size) {
+      for (let n = from; n <= to; n++) {
+        const block = await proofs.sourceProvider.getBlock(n, true);
+        if (!block) continue;
+        for (const tx of block.prefetchedTransactions) {
+          const sels = tx.to ? selectors.get(tx.to.toLowerCase()) : undefined;
+          if (sels && sels.has(tx.data.slice(0, 10).toLowerCase())) found.add(tx.hash);
+        }
+      }
     }
     return found;
   }
@@ -99,13 +116,14 @@ async function main() {
     }
     for (const p of policies) {
       if (BigInt(data.headerNumber) < p.startBlock || BigInt(data.headerNumber) > p.endBlock) continue;
-      const [proofValid, triggerMet, inWindow] = await verifier.checkClaim(
+      const [proofValid, triggerMet, inWindow, selfInflicted, perilIndex] = await verifier.checkClaim(
         p.id, data.headerNumber, data.txBytes, data.merkleProof, data.continuityProof,
       );
-      if (!proofValid || !triggerMet || !inWindow) {
-        console.log(`[watcher] policy ${p.id}: proof=${proofValid} trigger=${triggerMet} window=${inWindow} — skip`);
+      if (!proofValid || !triggerMet || !inWindow || selfInflicted) {
+        console.log(`[watcher] policy ${p.id}: proof=${proofValid} trigger=${triggerMet} window=${inWindow} self=${selfInflicted} — skip`);
         continue;
       }
+      console.log(`[watcher] policy ${p.id}: peril #${perilIndex} fired`);
       const tx = await verifier.submitClaim(p.id, data.headerNumber, data.txBytes, data.merkleProof, data.continuityProof);
       console.log(`[watcher] policy ${p.id}: claim submitted ${tx.hash}`);
       await tx.wait();

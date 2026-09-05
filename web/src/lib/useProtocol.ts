@@ -57,7 +57,9 @@ export interface PolicyView {
   premiumPaid: bigint;
   startBlock: bigint;
   endBlock: bigint;
-  trigger: { chainKey: bigint; target: string; kind: bigint; threshold: bigint; token: string };
+  chainKey: bigint;
+  target: string;
+  perils: { kind: bigint; threshold: bigint; token: string; signature: string }[];
   status: number;
 }
 
@@ -178,13 +180,9 @@ async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
       premiumPaid: p.premiumPaid,
       startBlock: p.startBlock,
       endBlock: p.endBlock,
-      trigger: {
-        chainKey: p.trigger.chainKey,
-        target: p.trigger.target,
-        kind: p.trigger.kind,
-        threshold: p.trigger.threshold,
-        token: p.trigger.token,
-      },
+      chainKey: p.chainKey,
+      target: p.target,
+      perils: [...p.perils].map((x: { kind: bigint; threshold: bigint; token: string; signature: string }) => ({ kind: x.kind, threshold: x.threshold, token: x.token, signature: x.signature })),
       status: Number(p.status),
     });
   }

@@ -55,5 +55,8 @@ export const etherscanTx = (h: string) => `https://etherscan.io/tx/${h}`;
 export const blockscoutTx = (h: string) => `https://creditcoin-testnet.blockscout.com/tx/${h}`;
 
 /** Human threshold, e.g. "1,000,000 DAI". */
+/** A single-peril bundle for an incident, in the contract's shape. */
+export const perilOf = (i: Incident) => ({ kind: i.kind, threshold: i.threshold, token: i.tokenAddress, signature: `0x${"0".repeat(64)}` });
+
 export const fmtThreshold = (i: Incident) =>
   `${(Number(i.threshold) / 10 ** i.decimals).toLocaleString()} ${i.token}`;

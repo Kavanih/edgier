@@ -2,9 +2,11 @@
 
 **On-chain insurance where the claim is a proof, not a vote.**
 
-Cover for EVM protocols, underwritten on Creditcoin, settled by an Attestcoin
-inclusion proof of the loss transaction. No committee, no claims assessor, no one who
-can say no — and anyone, including a stranger, can trigger a correct payout.
+Protocol cover for EVM contracts — one policy, one contract, a bundle of perils — underwritten
+on Creditcoin and settled by an Attestcoin inclusion proof of the loss transaction. No committee,
+no claims assessor, no one who can say no; anyone, including a stranger, can trigger a correct
+payout. Edgier insures **users against protocols**: if you control the insured contract, you are
+the risk, not the customer.
 
 Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail)
 · DeFi and AI tracks · deployed on Creditcoin CC3 Testnet.
@@ -26,13 +28,14 @@ Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-20
 4. [Verified live](#verified-live)
 5. [Contracts](#contracts)
 6. [The proof path](#the-proof-path)
-7. [Pricing](#pricing)
-8. [AI](#ai)
-9. [Tests and validation](#tests-and-validation)
-10. [Run it](#run-it)
-11. [Glossary](#glossary)
-12. [Limits, honestly](#limits-honestly)
-13. [Layout](#layout)
+7. [Moral hazard: what happens when they trigger it on purpose](#moral-hazard-what-happens-when-they-trigger-it-on-purpose)
+8. [Pricing](#pricing)
+9. [AI](#ai)
+10. [Tests and validation](#tests-and-validation)
+11. [Run it](#run-it)
+12. [Glossary](#glossary)
+13. [Limits, honestly](#limits-honestly)
+14. [Layout](#layout)
 
 ---
 
@@ -48,13 +51,29 @@ It is why on-chain cover has never scaled.
 
 For on-chain events, claims assessment is a **proof problem, not a voting problem**.
 
-A policy names an EVM contract and one precisely-defined loss event:
+A policy names an EVM **contract** and a **bundle of perils**; any one firing pays the full
+cover. That is the shape of the incumbents' "protocol cover" — without their claims committee.
 
-| Trigger | Fires on | Real-world risk |
+| Peril | Fires on | Real-world risk |
 |---|---|---|
 | `ADMIN_UPGRADE` | EIP-1967 `Upgraded(address)` or `OwnershipTransferred(...)` emitted by the insured contract | rug via proxy upgrade |
 | `EMERGENCY_PAUSE` | OpenZeppelin `Paused(address)` emitted by the insured contract | protocol froze itself |
-| `LARGE_OUTFLOW` | ERC-20 `Transfer` **from** the insured contract, emitted by the policy's named **token**, `value ≥ threshold` | treasury drain |
+| `LARGE_OUTFLOW` | ERC-20 `Transfer` **from** the insured contract, emitted by the peril's named **token**, `value ≥ threshold` — one peril per token | treasury drain, whatever function caused it |
+| `CUSTOM_EVENT` | any event signature emitted by the insured contract | the protocol's own alarm: `EmergencyShutdown`, `Blacklisted`, `NewAdmin`… |
+| `CALL_SELECTOR` | a **successful direct call** to the insured contract whose 4-byte selector matches — read from the proven transaction's own `to` and `data` | contracts that emit nothing: an ETH-only vault's `withdraw()`, a bare multisig's `execute()` |
+
+**"What if the hack uses a function we never named?"** It almost always does. The five settled
+incidents used five different exploit paths — stolen validator keys, a flash-loan donation bug, a
+compromised multisig, a keeper-replacement bug, a bad initialisation — and Edgier matched none of
+those *mechanisms*. It matched the *effect*: money left. `LARGE_OUTFLOW` looks at the result, not
+the method, which is why matching on logs rather than calldata matters. What a contract does not
+have cannot happen to it: a non-upgradeable, non-pausable contract simply has fewer perils to buy.
+For contracts that **emit nothing** — an ETH-only vault, a bare multisig — the proof still carries
+the transaction's own `to` and `data`, so `CALL_SELECTOR` insures "someone successfully called
+`withdraw()` on my contract." Its honest limit: it sees *direct* calls only; a call that reaches the
+contract through another contract leaves no trace in a transaction-plus-receipt proof. And an ETH
+balance simply dropping is state, not a transaction — not insurable by proof at all. The product
+says so rather than pretending.
 
 When the event happens, Creditcoin can prove the transaction was included in an Ethereum
 block. `ClaimVerifier` hands that proof to the **BlockProver precompile**, decodes the
@@ -139,14 +158,16 @@ the emitter-binding bug above; its transactions remain on-chain as history.)
 contracts/creditcoin/
   CoverPool.sol             ERC-4626 vault. Underwriters deposit mUSD, receive EDGR shares.
                             Tracks lockedCapacity; withdrawals capped at freeCapacity().
-  PolicyManager.sol         Sells cover: quote → lock capacity → collect premium → ACTIVE.
-                            settle() is onlyClaimVerifier. expire() reads the attested height
-                            from ChainInfo — never from the caller.
+  PolicyManager.sol         Sells cover on a contract against a peril bundle: validate perils →
+                            allowlist → concentration cap → waiting period → quote → lock →
+                            collect premium → ACTIVE. settle() is onlyClaimVerifier. expire()
+                            reads the attested height from ChainInfo — never from the caller.
   ClaimVerifier.sol         submitClaim(): precompile verify → window → replay guard →
-                            decode → TriggerLib.matches → PolicyManager.settle.
+                            decode → sender != holder → first matching peril → settle.
                             submitClaimBatch(): up to 10 policies, one continuity proof.
                             checkClaim(): view dry-run. No access control anywhere.
-  triggers/TriggerLib.sol   The rulebook. receiptStatus == 1 first; then log matching.
+  triggers/TriggerLib.sol   The rulebook: Peril, matches(), firstMatch() over a bundle.
+                            receiptStatus == 1 first; emitter-bound log matching.
   interfaces/IAttestcoin.sol IBlockProver, IChainInfo, IEvmV1Decoder + well-known addresses.
   MockUSD.sol               Settlement asset on testnet (open faucet).
 contracts/mocks/            Precompile stand-ins, used only by the unit tests.
@@ -197,12 +218,40 @@ What actually happens between "the hack landed on Ethereum" and "the pool paid":
    only trust step and it is Creditcoin's code, not ours.
 4. **Decode.** `EvmV1Decoder.decodeCommonTxFields(txBytes)` → `from, to, value, data`;
    `decodeReceiptFields(txBytes)` → `receiptStatus, receiptLogs[]`.
-5. **Match.** `TriggerLib.matches(trigger, txn, receipt)`.
-6. **Pay.** `PolicyManager.settle` → `CoverPool.payClaim`.
+5. **Match.** The transaction's sender must not be the policyholder; then
+   `TriggerLib.firstMatch(perils, target, receipt)` — the first peril in the bundle the receipt
+   satisfies, or revert.
+6. **Pay.** `PolicyManager.settle` → `CoverPool.payClaim`, recording which peril fired.
 
 The app runs steps 2–4 read-only from the browser on the Claims page ("fetch proof & verify in
 browser"), against the real precompile, before the AI reads the verified result. The watcher
 (`npm run watch`) automates 1–6 for new losses on a watched contract.
+
+## Moral hazard: what happens when they trigger it on purpose
+
+The party who controls the insured contract can cause the insured event. An admin who upgrades
+their own proxy emits *exactly* the same `Upgraded` as a stolen key; a treasury migration emits
+the same `Transfer` as a drain. A receipt records what happened, never why, and trying to read
+intent from it would just be a committee in disguise. Nexus and Sherlock handle this with humans
+who exclude "your own actions." Edgier handles it the way real-world parametric insurance does —
+crop cover on rainfall, flight cover on delays — by insuring on events the insured cannot cause:
+
+**Edgier insures users against protocols.** The buyer is a depositor, an LP, a DAO with funds
+inside — never the operator. Five defences make that workable without a committee, all on-chain:
+
+| Defence | Where | What it stops |
+|---|---|---|
+| **Self-inflicted losses never pay** — a loss transaction whose sender is the policyholder reverts with `SelfInflicted` | `ClaimVerifier` | the lazy self-trigger (a second wallet defeats it, which is why the rest exist) |
+| **Concentration cap** — one contract may never be more than `maxCoverPerTargetBps` (10%) of pool assets | `PolicyManager` | a single self-rug draining the pool; blast radius is bounded |
+| **Waiting period** — cover starts no earlier than the attested head plus `waitingBlocks` (~1 day) | `PolicyManager` | buy Monday, rug Tuesday; also closes insuring a loss that is already provable |
+| **Curated allowlist** — when `curated` is on, only `insurable[chainKey][target]` contracts may be covered | `PolicyManager` | insuring a toy contract you deployed yesterday; this is how underwriters choose what they back |
+| **Price** — base rate is the sum of the bundle's distinct perils, then the utilisation curve | `PolicyManager` | residual risk goes into the premium, as it does everywhere |
+
+Two of these are relaxed on **this testnet deployment, deliberately and visibly**:
+`allowBackdatedCover = true` skips the waiting period and permits historical windows (so the five
+mainnet incidents can be insured at all), and `curated = false` (so anyone can try any contract). A
+production deployment flips both. Everything else — the cap, the self-inflicted check, the
+pricing — is live now.
 
 ## Pricing
 
@@ -218,7 +267,8 @@ u > kink :  rate = base[kind] + slope1 + slope2 · (u − kink) / (1 − kink)
 premium  = cover · rate · blocks / (10 000 · BLOCKS_PER_YEAR)        rate in bps, blocks ≈ 12 s
 ```
 
-Defaults: `base` 500 / 300 / 800 bps for upgrade / pause / outflow; `kink` 80%; `slope1`
+Defaults: `base` 500 / 300 / 800 / 400 / 600 bps for upgrade / pause / outflow / custom event /
+function call, and a **bundle's base is the sum of its distinct perils** (all five: 2,600 bps); `kink` 80%; `slope1`
 200 bps; `slope2` 2000 bps. Worked, on a 50,000 pool with nothing locked:
 
 | Cover | u after | `ADMIN_UPGRADE` rate | 100k-block premium |
@@ -252,20 +302,23 @@ oracle and no authority. `docs/AI.md`.
 ## Tests and validation
 
 ```bash
-npm test             # 24 Hardhat tests — settlement logic with the precompiles mocked
+npm test             # 26 Hardhat tests — settlement logic with the precompiles mocked
 npm run preflight    # what can Creditcoin prove right now? (ChainInfo, keyless)
 npm run verify:live  # full read path against the live precompiles with OUR ABI (keyless)
 npm run settle:mainnet   # the five incidents, end to end, on the live network (funded key)
 ```
 
-The unit tests cover: payout on a matching event; **no payout on a reverted transaction**;
-wrong emitter ignored; a stranger can settle; outside-window rejected; precompile-rejected
-proof; trigger kinds distinguished; `LARGE_OUTFLOW` threshold and direction; no double
-settlement; expiry refused before the attested height passes; capital released on expiry;
-capital locked while live; the pricing curve at 2%, 90% and 100%; the `maxPremium` guard;
-batch settlement; batch length / mixed-chain / partial-failure / rejected-proof cases; a
-`Transfer` from an impostor contract is ignored; outflow policies must name a token; windows
-in the attested past are refused unless back-dating is allowed; expiry waits out the grace period.
+The unit tests cover: payout on a matching peril; **no payout on a reverted transaction**; wrong
+emitter ignored, for events and for `Transfer` (an impostor token); threshold and direction on
+outflows; **a bundle pays on any peril and reports which**; a bundle without the event does not
+pay for it; custom events must be named and must come from the insured contract; **`CALL_SELECTOR` pays on a
+successful direct call and not on a wrong selector, an indirect path, or a revert**; malformed and
+oversized bundles refused; bundle base rate is the sum of distinct kinds; a stranger can settle;
+**self-inflicted losses refused**; outside-window, precompile-rejected and double claims refused;
+**the per-contract concentration cap**, released on settlement and expiry; **the waiting period**
+(and that the demo switch skips it); **the curated allowlist**; the claim grace period and
+permissionless expiry; capital locked while live; the curve at 2% / 90% / 100%; the `maxPremium`
+guard; batch settlement, all-or-nothing, with mixed-chain and length checks.
 
 Network facts were confirmed against the live RPC and the Creditcoin docs, not assumed:
 chain id 102031 (`eth_chainId` → `0x18e8f`), proof service `prover.cc3-testnet`, mainnet
@@ -307,8 +360,10 @@ contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
 - **Cover** — the amount the policy pays out if the trigger fires; locked in the pool while
   the policy is live.
 - **Utilisation** — locked capital ÷ total assets. The pricing curve is a function of it.
-- **Trigger** — `{ chainKey, target, kind, threshold }`: which chain, which contract, which
-  event, and (for outflows) how big.
+- **Peril** — `{ kind, threshold, token, signature }`: one insured event on the contract. A
+  policy carries a bundle of them; any one firing pays.
+- **Moral hazard** — the insured can cause the insured event. Handled by insuring users against
+  protocols plus the five defences above, not by a committee.
 - **Window** — `[startBlock, endBlock]` in **source-chain** blocks. The same proof that shows
   the loss shows its block, so timing and substance are decided together.
 - **AttestedPoint** — what the ChainInfo precompile returns for a source chain:
@@ -332,8 +387,12 @@ contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
   not the instant it lands.
 - **Source chains are what Attestcoin attests** — Ethereum mainnet and Sepolia today. The
   contracts and triggers are EVM-generic; the reach is Creditcoin's.
-- **This testnet deployment allows back-dated cover.** That is what makes the historical
-  settlements possible, and it is exactly what a production deployment must not allow.
+- **This testnet deployment allows back-dated cover and is not curated.** That is what makes
+  the historical settlements possible and lets judges try any contract; a production deployment
+  flips both switches.
+- **The self-inflicted check is best-effort.** It compares the loss transaction's sender to the
+  policyholder. An operator who buys cover from a second wallet gets past it; the concentration
+  cap bounds what they can take, and the allowlist lets underwriters refuse them entirely.
 
 ## Layout
 

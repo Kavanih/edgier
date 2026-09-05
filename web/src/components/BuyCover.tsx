@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { parseEther, parseUnits, isAddress } from "ethers";
+import { parseEther, parseUnits, isAddress, id as keccakId } from "ethers";
 import { contractsFor, D, provider, read, type Actor } from "../lib/chain";
 import { amount, bpsPct, pctOfWad } from "../lib/format";
-import { Kind, KINDS } from "../lib/triggers";
-import { INCIDENTS } from "../lib/incidents";
+import { Kind, KINDS, ZERO32, type Peril } from "../lib/triggers";
+import { INCIDENTS, perilOf } from "../lib/incidents";
 import type { Snapshot } from "../lib/useProtocol";
 import type { PolicyDraft } from "../lib/ai";
 import { AiUnderwriter } from "./AiUnderwriter";
@@ -19,13 +19,24 @@ export function BuyCover({
 }: { snap: Snapshot; actor: Actor | null; act: Act; busy: string | null; aiEnabled: boolean }) {
   const [target, setTarget] = useState(D.addresses.InsuredContract);
   const [chainKey, setChainKey] = useState<number>(D.chainKey);
-  const [kind, setKind] = useState<Kind>(Kind.ADMIN_UPGRADE);
   const [coverStr, setCoverStr] = useState("10000");
-  const [thresholdStr, setThresholdStr] = useState("500");
+  // The bundle: which perils this policy covers on the contract.
+  const [upgrade, setUpgrade] = useState(true);
+  const [pause, setPause] = useState(true);
+  const [outflows, setOutflows] = useState<{ token: string; threshold: string; decimals: number; symbol: string }[]>([]);
+  const [customSig, setCustomSig] = useState("");
+  const [callSig, setCallSig] = useState("");
   // Default window: from what Creditcoin has attested right now, for ~7 days.
   const [startStr, setStartStr] = useState(snap.attestedHeight.toString());
   const [endStr, setEndStr] = useState((snap.attestedHeight + 50_400n).toString());
-  const [tokenStr, setTokenStr] = useState("");
+  const perils: Peril[] = [
+    ...(upgrade ? [{ kind: Kind.ADMIN_UPGRADE, threshold: 0n, token: "0x0000000000000000000000000000000000000000", signature: ZERO32 }] : []),
+    ...(pause ? [{ kind: Kind.EMERGENCY_PAUSE, threshold: 0n, token: "0x0000000000000000000000000000000000000000", signature: ZERO32 }] : []),
+    ...outflows.filter((o) => isAddress(o.token)).map((o) => ({ kind: Kind.LARGE_OUTFLOW, threshold: safeUnits(o.threshold, o.decimals), token: o.token, signature: ZERO32 })),
+    ...(customSig.trim() ? [{ kind: Kind.CUSTOM_EVENT, threshold: 0n, token: "0x0000000000000000000000000000000000000000", signature: customSig.startsWith("0x") && customSig.length === 66 ? customSig : keccakId(customSig.trim()) }] : []),
+    ...(callSig.trim() ? [{ kind: Kind.CALL_SELECTOR, threshold: 0n, token: "0x0000000000000000000000000000000000000000", signature: selectorOf(callSig.trim()) }] : []),
+  ];
+  const perilsKey = JSON.stringify(perils.map((x) => [x.kind, x.threshold.toString(), x.token, x.signature]));
   const [quote, setQuote] = useState<Quote | null>(null);
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -41,11 +52,11 @@ export function BuyCover({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (cover <= 0n || blocks <= 0n) { setQuote(null); return; }
+      if (cover <= 0n || blocks <= 0n || perils.length === 0) { setQuote(null); return; }
       try {
         const [rateBps, premium, utilAfter] = await Promise.all([
-          read.pm.rateFor(kind, cover) as Promise<bigint>,
-          read.pm.quote(kind, cover, blocks) as Promise<bigint>,
+          read.pm.rateFor(perils, cover) as Promise<bigint>,
+          read.pm.quote(perils, cover, blocks) as Promise<bigint>,
           read.pm.utilisationAfter(cover) as Promise<bigint>,
         ]);
         if (!cancelled) { setQuote({ rateBps, premium, utilAfter }); setQuoteErr(null); }
@@ -54,7 +65,8 @@ export function BuyCover({
       }
     })();
     return () => { cancelled = true; };
-  }, [kind, cover, blocks, snap.pool.totalAssets, snap.pool.locked]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perilsKey, cover, blocks, snap.pool.totalAssets, snap.pool.locked]);
 
   // Show the real date of whatever blocks are in the boxes (exact for mined blocks).
   useEffect(() => {
@@ -75,33 +87,45 @@ export function BuyCover({
     void pickDates(toLocalInput(a), toLocalInput(b));
   }
 
-  const spec = KINDS.find((k) => k.kind === kind)!;
+  const [targetCap, setTargetCap] = useState<bigint | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!isAddress(target)) { setTargetCap(null); return; }
+    (read.pm.remainingCapacityFor(chainKey, target) as Promise<bigint>).then((v) => live && setTargetCap(v)).catch(() => live && setTargetCap(null));
+    return () => { live = false; };
+  }, [target, chainKey, snap.pool.totalAssets, snap.pool.locked]);
+
   const overCapacity = cover > snap.pool.free;
-  const tokenMissing = kind === Kind.LARGE_OUTFLOW && !isAddress(tokenStr);
+  const overTargetCap = targetCap !== null && cover > targetCap;
+  const tokenMissing = outflows.some((o) => !isAddress(o.token));
   const me = actor?.address ?? "";
 
   /** Apply an AI draft to the form — after validating it. A model can return anything. */
   function applyDraft(d: PolicyDraft) {
-    const k = Number(d.kind);
-    if (Number.isInteger(k) && k >= 0 && k <= 2) setKind(k as Kind);
+    const kinds = (Array.isArray(d.kinds) ? d.kinds : [d.kind]).map(Number).filter((k) => Number.isInteger(k) && k >= 0 && k <= 3);
+    if (kinds.length) { setUpgrade(kinds.includes(0)); setPause(kinds.includes(1)); }
+    void 4; // CALL_SELECTOR needs a function name the model does not have; left to the user
     const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
     const cover = num(d.coverAmount); if (cover) setCoverStr(String(cover));
-    const thr = num(d.threshold); if (thr) setThresholdStr(String(thr));
+    const thr = num(d.threshold);
+    if (kinds.includes(2) && thr && outflows.length) setOutflows((os) => os.map((o, i) => (i === 0 ? { ...o, threshold: String(thr) } : o)));
     const wb = num(d.windowBlocks); if (wb) setEndStr((start + BigInt(Math.floor(wb))).toString());
   }
 
   const [preset, setPreset] = useState<(typeof INCIDENTS)[number] | null>(null);
+  void perilOf;
   function applyIncident(i: (typeof INCIDENTS)[number]) {
     setPreset(i);
-    setTarget(i.target); setChainKey(i.chainKey); setKind(i.kind); setTokenStr(i.tokenAddress);
-    setThresholdStr((Number(i.threshold) / 10 ** i.decimals).toString());
+    setTarget(i.target); setChainKey(i.chainKey);
+    setUpgrade(false); setPause(false); setCustomSig("");
+    setOutflows([{ token: i.tokenAddress, threshold: (Number(i.threshold) / 10 ** i.decimals).toString(), decimals: i.decimals, symbol: i.token }]);
     setStartStr(String(i.block - 50)); setEndStr(String(i.block + 50));
     setStartDate(""); setEndDate("");
   }
 
   async function buy() {
     const c = contractsFor(actor!.signer);
-    const premium = (await read.pm.quote(kind, cover, blocks)) as bigint;
+    const premium = (await read.pm.quote(perils, cover, blocks)) as bigint;
     const maxPremium = (premium * 101n) / 100n;
     const allowance: bigint = await c.usd.allowance(me, D.addresses.CoverPool);
     if (allowance < maxPremium) {
@@ -109,12 +133,7 @@ export function BuyCover({
       const tx = await c.usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n);
       await provider.waitForTransaction(tx.hash, 1, 180_000);
     }
-    // LARGE_OUTFLOW thresholds are in the token's own units; a preset carries its decimals.
-    // parseUnits, not a double: 1e6 DAI through a float is not 1e24 wei exactly.
-    const dec = preset && preset.target.toLowerCase() === target.toLowerCase() ? preset.decimals : 18;
-    const threshold = kind === Kind.LARGE_OUTFLOW ? parseUnits(thresholdStr || "0", dec) : 0n;
-    const token = kind === Kind.LARGE_OUTFLOW ? tokenStr : "0x0000000000000000000000000000000000000000";
-    return c.pm.buyPolicy({ chainKey, target, kind, threshold, token }, cover, start, end, maxPremium);
+    return c.pm.buyPolicy(chainKey, target, perils, cover, start, end, maxPremium);
   }
 
   return (
@@ -143,28 +162,35 @@ export function BuyCover({
               <option value={3}>Ethereum Mainnet (chainKey 3)</option>
             </select>
           </label>
-          <label className="field">
-            <span>Loss event</span>
-            <select value={kind} onChange={(e) => setKind(Number(e.target.value))}>
-              {KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label} — {k.signature}</option>)}
-            </select>
-          </label>
+          <div className="span-2 perils">
+            <span className="field-title">Perils covered on this contract <span className="muted small">— any one firing pays the full cover</span></span>
+            <label className="check-row"><input type="checkbox" checked={upgrade} onChange={(e) => setUpgrade(e.target.checked)} /><b>Admin upgrade</b><span className="muted">EIP-1967 <code>Upgraded</code> / <code>OwnershipTransferred</code> emitted by the contract</span></label>
+            <label className="check-row"><input type="checkbox" checked={pause} onChange={(e) => setPause(e.target.checked)} /><b>Emergency pause</b><span className="muted">OpenZeppelin <code>Paused</code> emitted by the contract</span></label>
+            <div className="check-row check-col">
+              <div className="row-h"><b>Large outflow</b><span className="muted">ERC-20 <code>Transfer</code> out of the contract, per token</span>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setOutflows((os) => [...os, { token: "", threshold: "", decimals: 18, symbol: "" }])}>+ token</button></div>
+              {outflows.map((o, i) => (
+                <div className="outflow-row" key={i}>
+                  <input placeholder="token address 0x…" value={o.token} spellCheck={false} onChange={(e) => setOutflows((os) => os.map((x, k) => (k === i ? { ...x, token: e.target.value } : x)))} />
+                  <input placeholder={`threshold${o.symbol ? " · " + o.symbol : ""}`} value={o.threshold} onChange={(e) => setOutflows((os) => os.map((x, k) => (k === i ? { ...x, threshold: e.target.value } : x)))} />
+                  <input className="dec" title="token decimals" value={o.decimals} onChange={(e) => setOutflows((os) => os.map((x, k) => (k === i ? { ...x, decimals: Number(e.target.value) || 18 } : x)))} />
+                  <button type="button" className="link" onClick={() => setOutflows((os) => os.filter((_, k) => k !== i))}><Icon name="x" size={12} /></button>
+                </div>
+              ))}
+            </div>
+            <label className="check-row check-col">
+              <div className="row-h"><b>Function call</b><span className="muted">for contracts that emit nothing — a successful <em>direct</em> call to this function, e.g. <code>emergencyWithdraw()</code></span></div>
+              <input placeholder="withdraw(uint256) or 0x2e1a7d4d" value={callSig} spellCheck={false} onChange={(e) => setCallSig(e.target.value)} />
+            </label>
+            <label className="check-row check-col">
+              <div className="row-h"><b>Custom event</b><span className="muted">the protocol's own alarm, by signature — e.g. <code>EmergencyShutdown(uint256)</code></span></div>
+              <input placeholder="EventName(type,type) or 0x… topic hash" value={customSig} spellCheck={false} onChange={(e) => setCustomSig(e.target.value)} />
+            </label>
+          </div>
           <label className="field">
             <span>Cover · mUSD</span>
             <input value={coverStr} onChange={(e) => setCoverStr(e.target.value)} />
           </label>
-          {kind === Kind.LARGE_OUTFLOW ? (
-            <label className="field">
-              <span>Outflow threshold · {preset && preset.target.toLowerCase() === target.toLowerCase() ? preset.token : "tokens (18dp)"}</span>
-              <input value={thresholdStr} onChange={(e) => setThresholdStr(e.target.value)} />
-            </label>
-          ) : <div />}
-          {kind === Kind.LARGE_OUTFLOW && (
-            <label className="field span-2">
-              <span>Token · the ERC-20 whose Transfer out of the contract counts</span>
-              <input value={tokenStr} onChange={(e) => setTokenStr(e.target.value)} spellCheck={false} placeholder="0x… (e.g. USDC, DAI, WETH)" />
-            </label>
-          )}
           <div className="span-2 window-head">
             <span className="field-title">Coverage period</span>
             <span className="muted small">pick dates, or set the source-chain blocks directly — the policy stores blocks</span>
@@ -192,13 +218,14 @@ export function BuyCover({
           </label>
         </div>
 
-        <div className="note note-warn"><Icon name="warn" size={14} /> {spec.risk}</div>
+        <div className="note"><Icon name="info" size={14} /> {perils.length === 0 ? "Pick at least one peril." : `${perils.length} peril${perils.length === 1 ? "" : "s"}: ${perils.map((x) => KINDS[x.kind].label).join(", ")}. Base rate is the sum of the distinct kinds.`}</div>
+        {overTargetCap && <div className="note note-bad"><Icon name="warn" size={14} /> This contract can take at most {amount(targetCap!)} more mUSD of cover — a single contract may never be more than 10% of the pool.</div>}
 
         {overCapacity && <div className="note note-bad"><Icon name="warn" size={14} /> Cover exceeds free capacity ({amount(snap.pool.free)} mUSD).</div>}
         {actor && snap.you && snap.you.usd === 0n && <div className="note"><Icon name="info" size={14} /> Your wallet holds no mUSD on this deployment — get test mUSD on the <a href="#/app/underwrite">Underwrite</a> page first.</div>}
 
         {tokenMissing && <div className="note"><Icon name="info" size={14} /> An outflow policy names the token whose <code>Transfer</code> counts — otherwise any contract could emit a fake one.</div>}
-        <button className="btn btn-primary btn-block" disabled={!!busy || !quote || overCapacity || !actor || tokenMissing} onClick={() => act("Buy policy", buy)}>
+        <button className="btn btn-primary btn-block" disabled={!!busy || !quote || overCapacity || overTargetCap || !actor || tokenMissing || perils.length === 0} onClick={() => act("Buy policy", buy)}>
           <Icon name="shield" size={15} /> {actor ? `Buy this policy as ${actor.label}` : "Connect a wallet to buy"}
         </button>
 
@@ -226,13 +253,13 @@ export function BuyCover({
         </section>
 
         <section className="card">
-          <div className="card-h"><h2>What this trigger sees</h2></div>
+          <div className="card-h"><h2>Who this is for</h2></div>
           <ul className="bullets">
-            <li><b>{spec.label}</b> matches <code>{spec.signature}</code> emitted {kind === Kind.LARGE_OUTFLOW ? "with the insured contract as sender" : "by the insured contract"}.</li>
-            <li>Only <em>successful</em> transactions count — <code>receiptStatus == 1</code>. Inclusion is not success.</li>
-            <li>Matched on event logs, not calldata, so it catches the event however it was reached.</li>
-            <li>The proof decides the timing too: the source block must lie inside the window.</li>
-            {kind === Kind.LARGE_OUTFLOW && <li>The <code>Transfer</code> must be emitted by the named token — a fake token cannot trigger it.</li>}
+            <li>Edgier insures <b>users against protocols</b>. If you control the insured contract, you are the risk, not the customer.</li>
+            <li>A loss transaction <em>sent by the policyholder</em> never pays (<code>SelfInflicted</code>).</li>
+            <li>One contract can never be more than <b>10%</b> of the pool's cover.</li>
+            <li>Only <em>successful</em> transactions count, matched on event logs emitted by the right contract.</li>
+            <li>Cover starts no earlier than the attested head plus a waiting period — except on this demo deployment, which allows historical windows.</li>
           </ul>
         </section>
       </div>
@@ -241,4 +268,10 @@ export function BuyCover({
 }
 
 function safeParse(s: string): bigint { try { return parseEther(s || "0"); } catch { return 0n; } }
+function safeUnits(s: string, dec: number): bigint { try { return parseUnits(s || "0", dec); } catch { return 0n; } }
+/** "withdraw(uint256)" or "0x2e1a7d4d" → the selector, left-aligned in 32 bytes. */
+function selectorOf(s: string): string {
+  const sel = /^0x[0-9a-fA-F]{8}$/.test(s) ? s.toLowerCase() : keccakId(s).slice(0, 10);
+  return sel + "0".repeat(56);
+}
 function safeBig(s: string): bigint { try { return BigInt(s || "0"); } catch { return 0n; } }

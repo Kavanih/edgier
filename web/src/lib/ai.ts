@@ -16,6 +16,7 @@ export interface AiStatus {
 
 export interface PolicyDraft {
   kind?: number;
+  kinds?: number[];
   threshold?: string;
   coverAmount?: string;
   windowBlocks?: number;
@@ -59,15 +60,14 @@ export const ask = (question: string) =>
   post<never>("/api/ai/ask", { question }) as unknown as Promise<{ model: string; answer: string }>;
 
 export function describePolicies(policies: PolicyView[]) {
-  const KIND = ["ADMIN_UPGRADE", "EMERGENCY_PAUSE", "LARGE_OUTFLOW"];
+  const KIND = ["ADMIN_UPGRADE", "EMERGENCY_PAUSE", "LARGE_OUTFLOW", "CUSTOM_EVENT"];
   return policies.map((p) => ({
     policyId: Number(p.id),
-    insuredContract: p.trigger.target,
-    trigger: KIND[Number(p.trigger.kind)],
-    threshold: p.trigger.threshold.toString(),
-    token: p.trigger.token,
+    insuredContract: p.target,
+    perils: p.perils.map((x) => ({ kind: KIND[Number(x.kind)], threshold: x.threshold.toString(), token: x.token, signature: x.signature })),
     startBlock: p.startBlock.toString(),
     endBlock: p.endBlock.toString(),
     coverAmount: p.coverAmount.toString(),
+    holder: p.holder,
   }));
 }

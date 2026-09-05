@@ -426,3 +426,12 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .field-title { font-weight: 700; font-size: 13px; }
 .presets-inline { display: flex; gap: 6px; margin-left: auto; }
 input[type="datetime-local"] { font-family: var(--mono); }
+
+.perils { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface-2); }
+.check-row { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: center; font-size: 13px; }
+.check-row input[type="checkbox"] { width: 15px; height: 15px; }
+.check-row.check-col { grid-template-columns: 1fr; gap: 6px; }
+.row-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row-h .btn { margin-left: auto; }
+.outflow-row { display: grid; grid-template-columns: 1.4fr 1fr 60px auto; gap: 8px; align-items: center; }
+.outflow-row .dec { text-align: center; }

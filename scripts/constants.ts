@@ -12,4 +12,6 @@ export enum TriggerKind {
   ADMIN_UPGRADE = 0,
   EMERGENCY_PAUSE = 1,
   LARGE_OUTFLOW = 2,
+  CUSTOM_EVENT = 3,
+  CALL_SELECTOR = 4,
 }
