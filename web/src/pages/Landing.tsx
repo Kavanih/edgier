@@ -31,7 +31,7 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       <div className="blobs" aria-hidden="true"><i /><i /><i /></div>
 
       <header className="l-nav">
-        <a className="logo" href="#/"><span className="logo-mark"><Icon name="brain" size={16} /></span><span className="logo-text">edgier<span className="caret">_</span></span></a>
+        <a className="logo" href="#/"><span className="logo-mark"><Icon name="brain" size={30} /></span><span className="logo-text">edgier<span className="caret">_</span></span></a>
         <nav className="l-links">
           <a href="#how">How it works</a>
           <a href="#proof">The proof</a>
@@ -169,7 +169,7 @@ export function Landing({ snap }: { snap: Snapshot | null }) {
       </Reveal>
 
       <footer className="l-foot">
-        <span className="logo"><span className="logo-mark"><Icon name="brain" size={14} /></span><span className="logo-text">edgier<span className="caret">_</span></span></span>
+        <span className="logo"><span className="logo-mark"><Icon name="brain" size={24} /></span><span className="logo-text">edgier<span className="caret">_</span></span></span>
         <span className="muted">the edge is the proof · BUIDL CTC 2026 Fall · Creditcoin CC3 Testnet</span>
       </footer>
     </div>

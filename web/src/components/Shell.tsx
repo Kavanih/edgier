@@ -23,7 +23,7 @@ export function Shell({
     <div className="app">
       <aside className="sidebar">
         <a className="logo" href={landing()} title="the edge is the proof">
-          <span className="logo-mark"><Icon name="brain" size={16} /></span>
+          <span className="logo-mark"><Icon name="brain" size={30} /></span>
           <span className="logo-text">edgier<span className="caret">_</span></span>
         </a>
 
