@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Interface, type Contract } from "ethers";
 import { connectWallet, D, explorerTx, provider, read, type Actor } from "./chain";
 import { clearBusy, toast } from "../components/Toasts";
@@ -193,7 +193,11 @@ export function useProtocol() {
   const [connError, setConnError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // One refresh at a time: a slow RPC answer must not pile onto the next tick.
+  const inFlight = useRef(false);
   const refresh = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       // Two phases: the pool and policies render immediately; the event log
       // fills in when the (slower) log query lands, keeping the last one until then.
@@ -206,14 +210,28 @@ export function useProtocol() {
       setConnError(
         `Cannot reach ${D.rpcUrl} — ${(e as Error).message}`,
       );
+    } finally {
+      inFlight.current = false;
     }
   }, [actor]);
 
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), 4000);
+    const t = setInterval(() => void refresh(), 8000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  // Follow the wallet: a new account or chain in MetaMask must not leave the
+  // app signing as the old one.
+  useEffect(() => {
+    const eth = (window as unknown as { ethereum?: { on?: (e: string, h: (...a: unknown[]) => void) => void; removeListener?: (e: string, h: (...a: unknown[]) => void) => void } }).ethereum;
+    if (!eth?.on) return;
+    const onAccounts = () => { setActor((a) => (a ? null : a)); toast("info", "Wallet changed — reconnect to continue"); };
+    const onChain = () => { setActor((a) => (a ? null : a)); toast("info", "Network changed — reconnect to continue"); };
+    eth.on("accountsChanged", onAccounts);
+    eth.on("chainChanged", onChain);
+    return () => { eth.removeListener?.("accountsChanged", onAccounts); eth.removeListener?.("chainChanged", onChain); };
+  }, []);
 
   /**
    * Runs a signed action, then refreshes.
