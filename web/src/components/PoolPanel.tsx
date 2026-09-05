@@ -46,6 +46,12 @@ export function PoolPanel({ snap, actor, act, busy }: { snap: Snapshot; actor: A
         <button className="btn btn-outline" disabled={!!busy || !actor} onClick={() => act("Withdraw", async () => c().pool.withdraw(parseEther(withdrawStr || "0"), me, me))}>Withdraw</button>
       </div>
       <p className="muted small">Withdraw more than the free capacity and the vault refuses — that capital is reserved against a live policy.</p>
+      <div className="actions">
+        <button className="btn btn-outline btn-sm" disabled={!!busy || !actor} onClick={() => act("Mint test mUSD", async () => c().usd.mint(me, parseEther("10000")))}>
+          <Icon name="spark" size={13} /> Get 10,000 test mUSD
+        </button>
+        <span className="muted small">testnet faucet — mUSD is a mock settlement asset</span>
+      </div>
     </section>
   );
 }

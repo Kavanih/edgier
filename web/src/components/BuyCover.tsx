@@ -195,6 +195,7 @@ export function BuyCover({
         <div className="note note-warn"><Icon name="warn" size={14} /> {spec.risk}</div>
 
         {overCapacity && <div className="note note-bad"><Icon name="warn" size={14} /> Cover exceeds free capacity ({amount(snap.pool.free)} mUSD).</div>}
+        {actor && snap.you && snap.you.usd === 0n && <div className="note"><Icon name="info" size={14} /> Your wallet holds no mUSD on this deployment — get test mUSD on the <a href="#/app/underwrite">Underwrite</a> page first.</div>}
 
         {tokenMissing && <div className="note"><Icon name="info" size={14} /> An outflow policy names the token whose <code>Transfer</code> counts — otherwise any contract could emit a fake one.</div>}
         <button className="btn btn-primary btn-block" disabled={!!busy || !quote || overCapacity || !actor || tokenMissing} onClick={() => act("Buy policy", buy)}>
