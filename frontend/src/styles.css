@@ -435,3 +435,5 @@ input[type="datetime-local"] { font-family: var(--mono); }
 .row-h .btn { margin-left: auto; }
 .outflow-row { display: grid; grid-template-columns: 1.4fr 1fr 60px auto; gap: 8px; align-items: center; }
 .outflow-row .dec { text-align: center; }
+
+.stack > .ai { margin-top: 0; }

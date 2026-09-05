@@ -228,8 +228,6 @@ export function BuyCover({
         <button className="btn btn-primary btn-block" disabled={!!busy || !quote || overCapacity || overTargetCap || !actor || tokenMissing || perils.length === 0} onClick={() => act("Buy policy", buy)}>
           <Icon name="shield" size={15} /> {actor ? `Buy this policy as ${actor.label}` : "Connect a wallet to buy"}
         </button>
-
-        <AiUnderwriter snap={snap} enabled={aiEnabled} onDraft={applyDraft} />
       </section>
 
       <div className="stack">
@@ -252,8 +250,10 @@ export function BuyCover({
           )}
         </section>
 
+        <AiUnderwriter snap={snap} enabled={aiEnabled} onDraft={applyDraft} />
+
         <section className="card">
-          <div className="card-h"><h2>Who this is for</h2></div>
+          <div className="card-h"><h2>Before you buy</h2></div>
           <ul className="bullets">
             <li>Edgier insures <b>users against protocols</b>. If you control the insured contract, you are the risk, not the customer.</li>
             <li>A loss transaction <em>sent by the policyholder</em> never pays (<code>SelfInflicted</code>).</li>
