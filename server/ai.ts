@@ -29,6 +29,25 @@ const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PROOF_BUILDER_URL = process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network";
 
+// Source-chain RPCs, for turning block numbers into dates and back.
+const SOURCE_RPC: Record<number, string> = {
+  1: process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com",
+  3: process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com",
+};
+const blockTimeCache = new Map<string, number>();
+async function blockTimestamp(chainKey: number, block: number | "latest"): Promise<{ number: number; timestamp: number }> {
+  const key = `${chainKey}:${block}`;
+  if (block !== "latest" && blockTimeCache.has(key)) return { number: block, timestamp: blockTimeCache.get(key)! };
+  const url = SOURCE_RPC[chainKey]; if (!url) throw new Error(`no RPC for chainKey ${chainKey}`);
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [block === "latest" ? "latest" : "0x" + block.toString(16), false] }) });
+  const j = (await res.json()) as { result?: { number: string; timestamp: string } };
+  if (!j.result) throw new Error(`block ${block} not found on chainKey ${chainKey}`);
+  const out = { number: parseInt(j.result.number, 16), timestamp: parseInt(j.result.timestamp, 16) };
+  if (block !== "latest") blockTimeCache.set(key, out.timestamp);
+  return out;
+}
+
 /**
  * Tried in order — fastest reliable responders first, from a latency benchmark
  * (2026-09-02: dots ~1.1s, nemotron-super ~0.9s, laguna-s ~1.8s; gemma and
@@ -251,6 +270,14 @@ const server = createServer(async (req, res) => {
       const r = await builder.getProof(tx);
       if (!r.success || !r.data) return send(res, 502, { error: r.error ?? "proof service failed" });
       return send(res, 200, r.data);
+    }
+
+    // Block number -> real timestamp (exact), and head for estimates.
+    if (req.method === "GET" && url.pathname === "/api/source/block") {
+      const chainKey = Number(url.searchParams.get("chainKey") ?? 3);
+      const b = url.searchParams.get("block") ?? "latest";
+      const out = await blockTimestamp(chainKey, b === "latest" ? "latest" : Number(b));
+      return send(res, 200, out);
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/ask") {

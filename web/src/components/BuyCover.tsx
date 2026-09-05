@@ -8,6 +8,7 @@ import type { Snapshot } from "../lib/useProtocol";
 import type { PolicyDraft } from "../lib/ai";
 import { AiUnderwriter } from "./AiUnderwriter";
 import { Icon } from "./Icons";
+import { blockForDate, blockTime, fmtDate, toLocalInput } from "../lib/source";
 import { toast } from "./Toasts";
 
 type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
@@ -24,6 +25,10 @@ export function BuyCover({
   const [startStr, setStartStr] = useState(String(D.startAttestedHeight));
   const [endStr, setEndStr] = useState(String(D.startAttestedHeight + 100_000));
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [startLabel, setStartLabel] = useState<string>("");
+  const [endLabel, setEndLabel] = useState<string>("");
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
 
   const cover = safeParse(coverStr);
@@ -49,6 +54,25 @@ export function BuyCover({
     return () => { cancelled = true; };
   }, [kind, cover, blocks, snap.pool.totalAssets, snap.pool.locked]);
 
+  // Show the real date of whatever blocks are in the boxes (exact for mined blocks).
+  useEffect(() => {
+    let live = true;
+    const sb = Number(startStr), eb = Number(endStr);
+    if (Number.isFinite(sb) && sb > 0) blockTime(chainKey, sb).then((t) => { if (live) setStartLabel(t ? fmtDate(t) : "in the future"); });
+    if (Number.isFinite(eb) && eb > 0) blockTime(chainKey, eb).then((t) => { if (live) setEndLabel(t ? fmtDate(t) : "in the future"); });
+    return () => { live = false; };
+  }, [startStr, endStr, chainKey]);
+
+  async function pickDates(startIso: string, endIso: string) {
+    setStartDate(startIso); setEndDate(endIso);
+    if (startIso) setStartStr(String(await blockForDate(chainKey, new Date(startIso))));
+    if (endIso) setEndStr(String(await blockForDate(chainKey, new Date(endIso))));
+  }
+  function presetDates(days: number) {
+    const a = new Date(); const b = new Date(Date.now() + days * 86_400_000);
+    void pickDates(toLocalInput(a), toLocalInput(b));
+  }
+
   const spec = KINDS.find((k) => k.kind === kind)!;
   const overCapacity = cover > snap.pool.free;
   const me = actor?.address ?? "";
@@ -66,6 +90,7 @@ export function BuyCover({
     setTarget(i.target); setChainKey(i.chainKey); setKind(i.kind);
     setThresholdStr((Number(i.threshold) / 10 ** i.decimals).toString());
     setStartStr(String(i.block - 50)); setEndStr(String(i.block + 50));
+    setStartDate(""); setEndDate("");
   }
 
   async function buy() {
@@ -126,13 +151,30 @@ export function BuyCover({
               <input value={thresholdStr} onChange={(e) => setThresholdStr(e.target.value)} />
             </label>
           ) : <div />}
+          <div className="span-2 window-head">
+            <span className="field-title">Coverage period</span>
+            <span className="muted small">pick dates, or set the source-chain blocks directly — the policy stores blocks</span>
+            <span className="presets-inline">
+              <button type="button" className="chip chip-btn" onClick={() => presetDates(7)}>next 7 days</button>
+              <button type="button" className="chip chip-btn" onClick={() => presetDates(30)}>next 30 days</button>
+              <button type="button" className="chip chip-btn" onClick={() => presetDates(90)}>next 90 days</button>
+            </span>
+          </div>
           <label className="field">
-            <span>Window start · block</span>
-            <input value={startStr} onChange={(e) => setStartStr(e.target.value)} />
+            <span>Cover from</span>
+            <input type="datetime-local" value={startDate} onChange={(e) => void pickDates(e.target.value, endDate)} />
           </label>
           <label className="field">
-            <span>Window end · block</span>
-            <input value={endStr} onChange={(e) => setEndStr(e.target.value)} />
+            <span>Cover until</span>
+            <input type="datetime-local" value={endDate} onChange={(e) => void pickDates(startDate, e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Window start · block {startLabel && <em className="muted">· {startLabel}</em>}</span>
+            <input value={startStr} onChange={(e) => { setStartStr(e.target.value); setStartDate(""); }} />
+          </label>
+          <label className="field">
+            <span>Window end · block {endLabel && <em className="muted">· {endLabel}</em>}</span>
+            <input value={endStr} onChange={(e) => { setEndStr(e.target.value); setEndDate(""); }} />
           </label>
         </div>
 
@@ -155,7 +197,7 @@ export function BuyCover({
           {quote && (
             <>
               <div className="quote-big">{amount(quote.premium, 4)} <small>mUSD</small></div>
-              <div className="muted">premium for {blocks.toString()} blocks of cover</div>
+              <div className="muted">premium for {blocks.toString()} blocks ≈ {(Number(blocks) * 12 / 86400).toFixed(1)} days of cover</div>
               <div className="kv">
                 <div><span>annual rate</span><b>{bpsPct(quote.rateBps)}</b></div>
                 <div><span>utilisation after</span><b>{pctOfWad(quote.utilAfter)}</b></div>

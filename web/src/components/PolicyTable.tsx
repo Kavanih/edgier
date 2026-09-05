@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { contractsFor, type Actor } from "../lib/chain";
 import { amount, short } from "../lib/format";
 import { kindLabel } from "../lib/triggers";
@@ -7,6 +7,7 @@ import { describeVerified, fetchProof, verifyAndDecode, type Proof, type Verifie
 import type { PolicyView, Snapshot } from "../lib/useProtocol";
 import { AiAnalyst } from "./AiAnalyst";
 import { Icon } from "./Icons";
+import { blockTime, fmtDate } from "../lib/source";
 
 type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
 const ACTIVE = 1;
@@ -24,6 +25,23 @@ function incidentOf(p: PolicyView): Incident | undefined {
     BigInt(i.block) >= p.startBlock && BigInt(i.block) <= p.endBlock);
 }
 
+function WindowCell({ p }: { p: PolicyView }) {
+  const [a, setA] = useState<string | null>(null);
+  const [b, setB] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    const ck = Number(p.trigger.chainKey);
+    blockTime(ck, Number(p.startBlock)).then((t) => live && setA(t ? fmtDate(t) : null));
+    blockTime(ck, Number(p.endBlock)).then((t) => live && setB(t ? fmtDate(t) : null));
+    return () => { live = false; };
+  }, [p]);
+  return (
+    <span title={`source blocks ${p.startBlock}–${p.endBlock}`}>
+      {a ? <>{a} → {b ?? "future"}</> : <span className="mono muted">{p.startBlock.toString()}–{p.endBlock.toString()}</span>}
+    </span>
+  );
+}
+
 export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snapshot; actor: Actor | null; act: Act; busy: string | null; aiEnabled: boolean }) {
   const [open, setOpen] = useState<bigint | null>(null);
   const active = snap.policies.filter((p) => p.status === ACTIVE);
@@ -38,7 +56,7 @@ export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snaps
         {snap.policies.length > 0 && (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>#</th><th>Holder</th><th>Insured</th><th>Chain</th><th>Trigger</th><th className="num">Cover</th><th>Window</th><th>Status</th><th>Proof</th><th /></tr></thead>
+              <thead><tr><th>#</th><th>Holder</th><th>Insured</th><th>Chain</th><th>Trigger</th><th className="num">Cover</th><th>Coverage period</th><th>Status</th><th>Proof</th><th /></tr></thead>
               <tbody>
                 {snap.policies.map((p) => {
                   const s = settlementOf(snap, p.id);
@@ -51,7 +69,7 @@ export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snaps
                       <td>{p.trigger.chainKey === 3n ? "mainnet" : p.trigger.chainKey === 1n ? "sepolia" : p.trigger.chainKey.toString()}</td>
                       <td>{kindLabel(Number(p.trigger.kind))}</td>
                       <td className="num mono">{amount(p.coverAmount, 0)}</td>
-                      <td className="mono muted">{p.startBlock.toString()}–{p.endBlock.toString()}</td>
+                      <td className="small"><WindowCell p={p} /></td>
                       <td><span className={`badge badge-${TONE[p.status]}`}>{STATUS[p.status]}</span></td>
                       <td className="hashes">
                         {inc && <a className="hash" href={etherscanTx(inc.txHash)} target="_blank" rel="noreferrer" title="the loss, on Ethereum"><Icon name="external" size={11} /> loss {inc.txHash.slice(0, 10)}…</a>}
