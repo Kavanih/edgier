@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Interface, type Contract } from "ethers";
-import { connectWallet, D, read, type Actor } from "./chain";
+import { connectWallet, D, explorerTx, provider, read, type Actor } from "./chain";
+import { clearBusy, toast } from "../components/Toasts";
 
 /**
  * Every custom error the stack can throw, in one interface.
@@ -214,17 +215,39 @@ export function useProtocol() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  /** Runs a signed action as the currently selected role, then refreshes. */
+  /**
+   * Runs a signed action, then refreshes.
+   *
+   * Confirmation is tracked on OUR RPC, not the wallet's: MetaMask's provider
+   * can sit on `tx.wait()` forever on some chains, which left the busy toast
+   * stuck on "Deposit…" after the transaction had long since mined. Every
+   * stage reports — submitted (with hash), confirmed (with block), rejected in
+   * the wallet, timed out, or reverted (with the contract's own error name).
+   */
   const act = useCallback(
-    async (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => {
+    async (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => {
       setBusy(label);
       setActionError(null);
+      toast("busy", `${label}: confirm in your wallet…`);
       try {
         const tx = await fn();
-        await tx.wait();
+        toast("busy", `${label}: submitted ${tx.hash.slice(0, 10)}… waiting for confirmation`);
+        const receipt = await provider.waitForTransaction(tx.hash, 1, 180_000);
+        clearBusy();
+        if (!receipt) {
+          toast("info", `${label}: still pending after 3 minutes — ${tx.hash.slice(0, 10)}…`);
+        } else if (receipt.status === 1) {
+          const link = explorerTx(tx.hash);
+          toast("ok", `${label} confirmed in block ${receipt.blockNumber}${link ? ` · ${tx.hash.slice(0, 10)}…` : ""}`);
+        } else {
+          toast("error", `${label} reverted on-chain (block ${receipt.blockNumber})`);
+        }
         await refresh();
       } catch (e) {
-        const err = e as { shortMessage?: string; message?: string };
+        clearBusy();
+        const err = e as { code?: string | number; shortMessage?: string; message?: string };
+        const rejected = err.code === "ACTION_REJECTED" || err.code === 4001 || /user (rejected|denied)/i.test(err.message ?? "");
+        if (rejected) { toast("info", `${label}: rejected in wallet`); return; }
         const name = revertName(e);
         setActionError(
           name

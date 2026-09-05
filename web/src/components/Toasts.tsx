@@ -20,7 +20,7 @@ export function Toasts() {
       // A busy toast with no text is the "done" signal: drop every busy toast.
       if (t.kind === "busy" && !t.text) { setItems((xs) => xs.filter((x) => x.kind !== "busy")); return; }
       setItems((xs) => [...xs.filter((x) => x.kind !== "busy" || t.kind !== "busy"), t]);
-      if (t.kind !== "busy") setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== t.id)), t.kind === "error" ? 9000 : 4500);
+      if (t.kind !== "busy") setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== t.id)), t.kind === "error" ? 9000 : t.kind === "info" ? 7000 : 5000);
     };
     listeners.add(on);
     return () => { listeners.delete(on); };

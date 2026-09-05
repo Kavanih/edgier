@@ -8,7 +8,7 @@ import type { PolicyView, Snapshot } from "../lib/useProtocol";
 import { AiAnalyst } from "./AiAnalyst";
 import { Icon } from "./Icons";
 
-type Act = (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
+type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
 const ACTIVE = 1;
 const STATUS = ["none", "active", "claimed", "expired"];
 const TONE = ["muted", "active", "ok", "muted"];

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { parseEther } from "ethers";
-import { contractsFor, D, type Actor } from "../lib/chain";
+import { contractsFor, D, provider, type Actor } from "../lib/chain";
 import { amount, pctOfWad } from "../lib/format";
 import type { Snapshot } from "../lib/useProtocol";
 import { CapacityBar } from "./Charts";
 import { Icon } from "./Icons";
+import { toast } from "./Toasts";
 
-type Act = (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
+type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
 
 export function PoolPanel({ snap, actor, act, busy }: { snap: Snapshot; actor: Actor | null; act: Act; busy: string | null }) {
   const [depositStr, setDepositStr] = useState("25000");
@@ -20,7 +21,9 @@ export function PoolPanel({ snap, actor, act, busy }: { snap: Snapshot; actor: A
   async function ensureAllowance(need: bigint) {
     const { usd } = c();
     if ((await usd.allowance(me, D.addresses.CoverPool)) >= need) return;
-    await (await usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n)).wait();
+    toast("busy", "Approving mUSD for the pool — confirm in your wallet…");
+    const tx = await usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n);
+    await provider.waitForTransaction(tx.hash, 1, 180_000);
   }
 
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { parseEther } from "ethers";
-import { contractsFor, D, read, type Actor } from "../lib/chain";
+import { contractsFor, D, provider, read, type Actor } from "../lib/chain";
 import { amount, bpsPct, pctOfWad } from "../lib/format";
 import { Kind, KINDS } from "../lib/triggers";
 import { INCIDENTS } from "../lib/incidents";
@@ -8,8 +8,9 @@ import type { Snapshot } from "../lib/useProtocol";
 import type { PolicyDraft } from "../lib/ai";
 import { AiUnderwriter } from "./AiUnderwriter";
 import { Icon } from "./Icons";
+import { toast } from "./Toasts";
 
-type Act = (label: string, fn: () => Promise<{ wait: () => Promise<unknown> }>) => Promise<void>;
+type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
 interface Quote { rateBps: bigint; premium: bigint; utilAfter: bigint }
 
 export function BuyCover({
@@ -72,7 +73,11 @@ export function BuyCover({
     const premium = (await read.pm.quote(kind, cover, blocks)) as bigint;
     const maxPremium = (premium * 101n) / 100n;
     const allowance: bigint = await c.usd.allowance(me, D.addresses.CoverPool);
-    if (allowance < maxPremium) await (await c.usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n)).wait();
+    if (allowance < maxPremium) {
+      toast("busy", "Approving mUSD for the pool — confirm in your wallet…");
+      const tx = await c.usd.approve(D.addresses.CoverPool, 2n ** 256n - 1n);
+      await provider.waitForTransaction(tx.hash, 1, 180_000);
+    }
     // LARGE_OUTFLOW thresholds are in the token's own units; a preset carries its decimals.
     const dec = preset && preset.target.toLowerCase() === target.toLowerCase() ? preset.decimals : 18;
     const threshold = kind === Kind.LARGE_OUTFLOW ? BigInt(Math.round(Number(thresholdStr || "0") * 10 ** dec)) : 0n;
