@@ -29,10 +29,17 @@ async function main() {
   const usd = await ethers.getContractAt("MockUSD", d.addresses.MockUSD, signer);
   if ((await usd.allowance(signer.address, d.addresses.CoverPool)) < COVER * 2n) await (await usd.approve(d.addresses.CoverPool, ethers.MaxUint256)).wait();
 
-  // What did the real exploit transaction actually do? Read it from mainnet.
-  const main = new JsonRpcProvider(process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com", undefined, { staticNetwork: true });
-  const [tx, rx] = await Promise.all([main.getTransaction(TX), main.getTransactionReceipt(TX)]);
-  if (!tx || !rx) throw new Error("mainnet tx not found");
+  // What did the real exploit transaction actually do? Read it from mainnet —
+  // public RPCs are flaky on 2022 history, so try several.
+  let tx: Awaited<ReturnType<JsonRpcProvider["getTransaction"]>> = null, rx: Awaited<ReturnType<JsonRpcProvider["getTransactionReceipt"]>> = null;
+  for (const url of [process.env.MAINNET_RPC_URL, "https://mainnet.gateway.tenderly.co", "https://eth.drpc.org", "https://ethereum-rpc.publicnode.com"].filter(Boolean) as string[]) {
+    try {
+      const main = new JsonRpcProvider(url, undefined, { staticNetwork: true });
+      [tx, rx] = await Promise.all([main.getTransaction(TX), main.getTransactionReceipt(TX)]);
+      if (tx && rx) { console.log(`mainnet via ${url}`); break; }
+    } catch { /* next */ }
+  }
+  if (!tx || !rx) throw new Error("mainnet tx not found on any RPC");
   const selector = tx.data.slice(0, 10);
   const bridgeEvent = rx.logs.find((l) => l.address.toLowerCase() === RONIN.toLowerCase())?.topics[0];
   if (!bridgeEvent) throw new Error("the bridge emitted no event in this tx");

@@ -345,15 +345,18 @@ attested from block 0.
 
 ## Run it
 
+Three packages, each with its own `npm install`. One `.env` at the repo root (copy
+`.env.example`; keys and faucet in `contracts/docs/TESTNET.md`).
+
 ```bash
-npm install && npm run build && npm test
-cp .env.example .env          # fill in keys; tCTC from the Creditcoin Discord faucet (contracts/docs/TESTNET.md)
-npm run dev                   # AI sidecar + web app against the live testnet
+cd contracts && npm install && npm run build && npm test      # 26 tests
+cd ../backend  && npm install && npm run dev                   # AI sidecar + frontend, together
+cd ../frontend && npm install                                  # (backend's dev script starts it)
 ```
 
-Redeploy: `npm run deploy:creditcoin` (writes `deployments/cc3testnet.json` and the frontend's
-generated deployment file). Reproduce the settlements: `npm run settle:mainnet`. Watch a
-contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
+Or individually: `npm run ai` / `npm run watch` in `backend/`; `npm run dev` in `frontend/`;
+`npm run deploy:creditcoin`, `npm run settle:mainnet`, `npm run verify:bundle`, `npm run preflight`,
+`npm run verify:live` in `contracts/`.
 
 ## Glossary
 
@@ -401,10 +404,9 @@ contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
 ```
 contracts/     Hardhat project — src/ (Solidity), test/, scripts/ (deploy, settle, verify),
                deployments/ (addresses, ABIs, deploy block), docs/ (TESTNET, TRIGGERS, PRICING, DEMO)
-backend/       server/ (AI sidecar: OpenRouter proxy, proof proxy, block↔time), watcher/, docs/AI.md
+backend/       server/ (AI sidecar: OpenRouter proxy, proof proxy, block↔time), watcher/, dev.ts, docs/AI.md
 frontend/      React app — landing, dashboard, cover, underwrite, claims, activity, docs
-README.md · list.md (candidate incidents) · package.json (workspace root) · .env.example
+list.md        candidate incidents: settled, chain-verified, and to-verify
 ```
 
-Everything generated — `contracts/artifacts`, `contracts/cache`, `contracts/typechain-types`,
-`frontend/dist`, `node_modules`, `.env` — is ignored; nothing built or secret is committed.
+Each package owns its dependencies; nothing generated or secret is committed.

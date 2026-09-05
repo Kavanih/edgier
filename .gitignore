@@ -1,12 +1,14 @@
-node_modules/
+# secrets
 .env
-*.log
-.DS_Store
 
-# contracts (hardhat build output)
+# dependencies (installed per package)
+node_modules/
+
+# generated
 contracts/artifacts/
 contracts/cache/
 contracts/typechain-types/
-
-# frontend build
 frontend/dist/
+
+*.log
+.DS_Store
