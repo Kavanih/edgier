@@ -31,22 +31,37 @@ const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PROOF_BUILDER_URL = process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network";
 
 // Source-chain RPCs, for turning block numbers into dates and back.
-const SOURCE_RPC: Record<number, string> = {
-  1: process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com",
-  3: process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com",
+const SOURCE_RPC: Record<number, string[]> = {
+  1: [process.env.SEPOLIA_RPC_URL, "https://ethereum-sepolia-rpc.publicnode.com", "https://sepolia.gateway.tenderly.co"].filter(Boolean) as string[],
+  3: [process.env.MAINNET_RPC_URL, "https://ethereum-rpc.publicnode.com", "https://mainnet.gateway.tenderly.co", "https://eth.drpc.org"].filter(Boolean) as string[],
 };
+class NotMined extends Error {}
 const blockTimeCache = new Map<string, number>();
 async function blockTimestamp(chainKey: number, block: number | "latest"): Promise<{ number: number; timestamp: number }> {
   const key = `${chainKey}:${block}`;
   if (block !== "latest" && blockTimeCache.has(key)) return { number: block, timestamp: blockTimeCache.get(key)! };
-  const url = SOURCE_RPC[chainKey]; if (!url) throw new Error(`no RPC for chainKey ${chainKey}`);
-  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [block === "latest" ? "latest" : "0x" + block.toString(16), false] }) });
-  const j = (await res.json()) as { result?: { number: string; timestamp: string } };
-  if (!j.result) throw new Error(`block ${block} not found on chainKey ${chainKey}`);
-  const out = { number: parseInt(j.result.number, 16), timestamp: parseInt(j.result.timestamp, 16) };
-  if (block !== "latest") blockTimeCache.set(key, out.timestamp);
-  return out;
+  const urls = SOURCE_RPC[chainKey]; if (!urls?.length) throw new Error(`no RPC for chainKey ${chainKey}`);
+  let lastErr = "no RPC answered";
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [block === "latest" ? "latest" : "0x" + block.toString(16), false] }),
+        signal: AbortSignal.timeout(8000) });
+      if (!res.ok) { lastErr = `${url}: HTTP ${res.status}`; continue; }
+      const j = (await res.json()) as { result?: { number: string; timestamp: string } | null; error?: unknown };
+      if (j.result === null && block !== "latest") {
+        // A well-formed "null" from a healthy node means the block does not exist yet.
+        const head = await blockTimestamp(chainKey, "latest");
+        if (typeof block === "number" && block > head.number) throw new NotMined(`block ${block} is above the head ${head.number}`);
+        lastErr = `${url}: no data for block ${block}`; continue;
+      }
+      if (!j.result) { lastErr = `${url}: ${JSON.stringify(j.error ?? "empty")}`.slice(0, 100); continue; }
+      const out = { number: parseInt(j.result.number, 16), timestamp: parseInt(j.result.timestamp, 16) };
+      if (block !== "latest") blockTimeCache.set(key, out.timestamp);
+      return out;
+    } catch (e) { if (e instanceof NotMined) throw e; lastErr = `${url}: ${(e as Error).message}`.slice(0, 100); }
+  }
+  throw new Error(`block ${block} lookup failed (${lastErr})`);
 }
 
 /**
@@ -205,6 +220,11 @@ happened, and for each policy say whether its trigger is met and why. Rules you 
   - The transaction's source block must lie inside the policy's [startBlock, endBlock].
 Your verdicts are advisory. The contract will re-check every rule itself.
 
+Write for a person, not a parser: name the protocol if the policy or data names it, state amounts
+with their token and in round human numbers ("25.5 million USDC"), say which contract the money
+left and where it went in plain words, avoid raw hex except a shortened address (0x1A2a…54F2),
+and make each verdict's reason one plain sentence a non-engineer could repeat.
+
 Return: {"headline": "<one line>", "whatHappened": "<2-4 sentences>",
 "verdicts": [{"policyId": <n>, "triggerMet": true|false, "reason": "<one sentence>"}],
 "caveats": ["<anything the data cannot establish>", ...]}`;
@@ -285,8 +305,13 @@ const server = createServer(async (req, res) => {
       if (!VALID_CHAIN_KEYS.has(chainKey)) return send(res, 400, { error: "chainKey must be 1 or 3" }, origin);
       const b = url.searchParams.get("block") ?? "latest";
       if (b !== "latest" && !/^\d{1,12}$/.test(b)) return send(res, 400, { error: "block must be a number or latest" }, origin);
-      const out = await blockTimestamp(chainKey, b === "latest" ? "latest" : Number(b));
-      return send(res, 200, out, origin);
+      try {
+        const out = await blockTimestamp(chainKey, b === "latest" ? "latest" : Number(b));
+        return send(res, 200, out, origin);
+      } catch (e) {
+        if (e instanceof NotMined) return send(res, 404, { error: e.message }, origin);
+        throw e;
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/ask") {

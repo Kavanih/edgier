@@ -6,16 +6,26 @@
 const cache = new Map<string, number>();
 let head: { chainKey: number; number: number; timestamp: number; at: number } | null = null;
 
-export async function blockTime(chainKey: number, block: number): Promise<number | null> {
+/** Exact timestamp of a mined block; `"future"` if it does not exist yet; `null` if the lookup failed. */
+export async function blockTime(chainKey: number, block: number): Promise<number | "future" | null> {
   const k = `${chainKey}:${block}`;
   if (cache.has(k)) return cache.get(k)!;
   try {
     const r = await fetch(`/api/source/block?chainKey=${chainKey}&block=${block}`);
+    if (r.status === 404) return "future";
     if (!r.ok) return null;
     const j = (await r.json()) as { timestamp: number };
     cache.set(k, j.timestamp);
     return j.timestamp;
   } catch { return null; }
+}
+
+/** Human label for a block: exact date, or an estimate (≈), or "not mined yet". */
+export async function blockLabel(chainKey: number, block: number): Promise<string> {
+  const t = await blockTime(chainKey, block);
+  if (typeof t === "number") return fmtDate(t);
+  if (t === "future") return "not mined yet";
+  try { return `≈ ${fmtDate(await dateForBlock(chainKey, block))}`; } catch { return "date unavailable"; }
 }
 
 async function headOf(chainKey: number) {

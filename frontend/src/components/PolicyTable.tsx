@@ -7,7 +7,7 @@ import { describeVerified, fetchProof, verifyAndDecode, type Proof, type Verifie
 import type { PolicyView, Snapshot } from "../lib/useProtocol";
 import { AiAnalyst } from "./AiAnalyst";
 import { Icon } from "./Icons";
-import { blockTime, fmtDate } from "../lib/source";
+import { blockLabel } from "../lib/source";
 
 type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
 const ACTIVE = 1;
@@ -32,13 +32,13 @@ function WindowCell({ p }: { p: PolicyView }) {
   useEffect(() => {
     let live = true;
     const ck = Number(p.chainKey);
-    blockTime(ck, Number(p.startBlock)).then((t) => live && setA(t ? fmtDate(t) : null));
-    blockTime(ck, Number(p.endBlock)).then((t) => live && setB(t ? fmtDate(t) : null));
+    blockLabel(ck, Number(p.startBlock)).then((l) => live && setA(l));
+    blockLabel(ck, Number(p.endBlock)).then((l) => live && setB(l));
     return () => { live = false; };
   }, [p]);
   return (
     <span title={`source blocks ${p.startBlock}–${p.endBlock}`}>
-      {a ? <>{a} → {b ?? "future"}</> : <span className="mono muted">{p.startBlock.toString()}–{p.endBlock.toString()}</span>}
+      {a ? <>{a} → {b ?? "…"}</> : <span className="mono muted">{p.startBlock.toString()}–{p.endBlock.toString()}</span>}
     </span>
   );
 }

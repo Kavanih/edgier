@@ -8,7 +8,7 @@ import type { Snapshot } from "../lib/useProtocol";
 import type { PolicyDraft } from "../lib/ai";
 import { AiUnderwriter } from "./AiUnderwriter";
 import { Icon } from "./Icons";
-import { blockForDate, blockTime, fmtDate, toLocalInput } from "../lib/source";
+import { blockForDate, blockLabel, toLocalInput } from "../lib/source";
 import { toast } from "./Toasts";
 
 type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
@@ -72,8 +72,8 @@ export function BuyCover({
   useEffect(() => {
     let live = true;
     const sb = Number(startStr), eb = Number(endStr);
-    if (Number.isFinite(sb) && sb > 0) blockTime(chainKey, sb).then((t) => { if (live) setStartLabel(t ? fmtDate(t) : "in the future"); });
-    if (Number.isFinite(eb) && eb > 0) blockTime(chainKey, eb).then((t) => { if (live) setEndLabel(t ? fmtDate(t) : "in the future"); });
+    if (Number.isFinite(sb) && sb > 0) blockLabel(chainKey, sb).then((l) => { if (live) setStartLabel(l); }); else setStartLabel("");
+    if (Number.isFinite(eb) && eb > 0) blockLabel(chainKey, eb).then((l) => { if (live) setEndLabel(l); }); else setEndLabel("");
     return () => { live = false; };
   }, [startStr, endStr, chainKey]);
 
