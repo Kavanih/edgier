@@ -73,7 +73,12 @@ b { font-weight: 600; }
 .signing code { background: var(--surface-2); color: var(--text-2); }
 .content { padding: 12px 36px 48px; display: flex; flex-direction: column; gap: 18px; animation: fade .22s ease-out; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-.skeleton { padding: 40px; color: var(--muted); text-align: center; }
+.sk { position: relative; overflow: hidden; }
+.sk-line, .sk-block { display: block; border-radius: 6px; background: var(--surface-3); margin: 8px 0; height: 12px; }
+.sk-line.tall { height: 26px; } .sk-block { height: 180px; margin-top: 14px; }
+.w30 { width: 30%; } .w40 { width: 40%; } .w60 { width: 60%; } .w70 { width: 70%; } .w80 { width: 80%; } .w90 { width: 90%; }
+.sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, #ffffff99, transparent); animation: shimmer 1.4s infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
 
 /* ---------- chips / badges / seg ---------- */
 .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); font-size: 12px; color: var(--muted); font-family: var(--ui); }

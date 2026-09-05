@@ -11,7 +11,19 @@ import { HowItWorks } from "./pages/HowItWorks";
 import { useProtocol } from "./lib/useProtocol";
 import { aiStatus, type AiStatus } from "./lib/ai";
 import { useRoute } from "./lib/router";
-import { D } from "./lib/chain";
+
+/** Skeleton for the first paint. Cards fill in as soon as the chain answers. */
+function Loading() {
+  return (
+    <div className="stack" aria-busy="true" aria-label="loading">
+      <div className="stats">{[0, 1, 2, 3].map((i) => <div key={i} className="stat sk"><span className="sk-line w40" /><span className="sk-line w60 tall" /><span className="sk-line w30" /></div>)}</div>
+      <div className="grid-2">
+        <div className="card sk"><span className="sk-line w30" /><span className="sk-block" /></div>
+        <div className="card sk"><span className="sk-line w30" /><span className="sk-line w90" /><span className="sk-line w70" /><span className="sk-line w80" /></div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const { actor, connect, disconnect, snap, act, busy, connError, actionError, dismissActionError } = useProtocol();
@@ -35,7 +47,7 @@ export default function App() {
   return (
     <>
       <Shell page={page} actor={actor} connect={connect} disconnect={disconnect} ai={ai}>
-        {!snap && !connError && <div className="skeleton">connecting to {D.rpcUrl}…</div>}
+        {!snap && !connError && <Loading />}
         {!snap && connError && <div className="note note-bad">{connError}</div>}
         {snap && (
           <>
