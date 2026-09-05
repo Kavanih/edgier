@@ -1,0 +1,15 @@
+{
+  "name": "@edgier/contracts",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:creditcoin": "hardhat run scripts/deploy-creditcoin.ts --network cc3testnet",
+    "settle:mainnet": "hardhat run scripts/settle-mainnet-incident.ts --network cc3testnet",
+    "verify:bundle": "hardhat run scripts/verify-bundle-live.ts --network cc3testnet",
+    "preflight": "tsx scripts/check-attestation.ts",
+    "verify:live": "tsx scripts/verify-live.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

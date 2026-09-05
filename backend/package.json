@@ -1,0 +1,10 @@
+{
+  "name": "@edgier/backend",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "ai": "tsx server/ai.ts",
+    "watch": "tsx watcher/index.ts",
+    "typecheck": "tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node server/ai.ts watcher/index.ts"
+  }
+}

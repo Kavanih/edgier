@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as dotenv from "dotenv";
+import { resolve } from "node:path";
 import { proofProvider } from "@gluwa/usc-sdk";
-dotenv.config();
+dotenv.config({ path: resolve(__dirname, "../../.env") });
 
 /**
  * Edgier AI sidecar.

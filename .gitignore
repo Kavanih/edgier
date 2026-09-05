@@ -1,10 +1,12 @@
 node_modules/
 .env
-artifacts/
-cache/
-typechain-types/
 *.log
+.DS_Store
 
-# Frontend
-web/node_modules/
-web/dist/
+# contracts (hardhat build output)
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+
+# frontend build
+frontend/dist/

@@ -11,7 +11,7 @@ import { AttestcoinAddresses } from "./constants";
  * live network instead of the local demo.
  */
 
-const OUT = resolve(__dirname, "../web/src/generated/deployment.json");
+const OUT = resolve(__dirname, "../../frontend/src/generated/deployment.json");
 const EXPLORER = "https://creditcoin-testnet.blockscout.com";
 
 /** Frontend ABI name -> artifact. ChainInfo is the real precompile interface here. */

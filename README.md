@@ -152,7 +152,7 @@ against the attested mainnet height, releasing its capital. A refusal and an exp
 live, both because the contract was right. (That deployment was superseded when a review found
 the emitter-binding bug above; its transactions remain on-chain as history.)
 
-`npm run settle:mainnet` reproduces all of it from `scripts/incidents.ts`.
+`npm run settle:mainnet` reproduces all of it from `contracts/scripts/incidents.ts`.
 
 ## Contracts
 
@@ -282,12 +282,12 @@ function call, and a **bundle's base is the sum of its distinct perils** (all fi
 Measuring utilisation *after* reserving the cover means the buyer taking the last of the
 capacity pays for taking it — and underwriters earn most when their capital is scarcest.
 Because the quote moves with pool state, `buyPolicy` takes a `maxPremium` slippage guard.
-See `docs/PRICING.md` for what real pricing still needs (per-target risk, correlation limits).
+See `contracts/docs/PRICING.md` for what real pricing still needs (per-target risk, correlation limits).
 
 ## AI
 
 **The model informs. The proof decides.** Two panels and a chat, all on free OpenRouter
-models via a key-holding sidecar (`server/ai.ts`) that enforces free-only, rotates on rate
+models via a key-holding sidecar (`backend/server/ai.ts`) that enforces free-only, rotates on rate
 limits, ranks by measured latency and caps daily use:
 
 - **Incident analyst** — receives the *verified* transaction (fields, receipt status, decoded
@@ -299,7 +299,7 @@ limits, ranks by measured latency and caps daily use:
 
 Remove the sidecar and the protocol is unchanged. That is the AI-track brief read literally:
 AI processing cryptographically verified cross-chain data to inform decisions, with no
-oracle and no authority. `docs/AI.md`.
+oracle and no authority. `backend/docs/AI.md`.
 
 ## Tests and validation
 
@@ -347,7 +347,7 @@ attested from block 0.
 
 ```bash
 npm install && npm run build && npm test
-cp .env.example .env          # fill in keys; tCTC from the Creditcoin Discord faucet (docs/TESTNET.md)
+cp .env.example .env          # fill in keys; tCTC from the Creditcoin Discord faucet (contracts/docs/TESTNET.md)
 npm run dev                   # AI sidecar + web app against the live testnet
 ```
 
@@ -384,7 +384,7 @@ contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
   price moves, not native ETH transfers (no `Transfer` event). That limit is the price of
   being unarguable, and it is stated on the policy rather than discovered at claim time.
 - **Pricing sees capacity, not concentration.** Twenty policies behind one compromised
-  multisig are one risk; the curve cannot tell. `docs/PRICING.md`.
+  multisig are one risk; the curve cannot tell. `contracts/docs/PRICING.md`.
 - **Attestation is periodic.** A fresh loss is provable after Creditcoin attests its block,
   not the instant it lands.
 - **Source chains are what Attestcoin attests** — Ethereum mainnet and Sepolia today. The
@@ -399,12 +399,12 @@ contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
 ## Layout
 
 ```
-contracts/       Solidity — see Contracts
-scripts/         deploy-creditcoin, settle-mainnet-incident, incidents, preflight, verify-live
-server/          AI sidecar (OpenRouter, free models only, proof proxy)
-watcher/         proof pipeline for new losses (@gluwa/usc-sdk)
-web/             React app — landing + dashboard, cover, underwrite, claims, activity, docs
-test/            Hardhat unit tests (precompiles mocked)
-deployments/     cc3testnet.json — addresses, ABIs, deploy block
-docs/            TESTNET.md · TRIGGERS.md · PRICING.md · AI.md · DEMO.md
+contracts/     Hardhat project — src/ (Solidity), test/, scripts/ (deploy, settle, verify),
+               deployments/ (addresses, ABIs, deploy block), docs/ (TESTNET, TRIGGERS, PRICING, DEMO)
+backend/       server/ (AI sidecar: OpenRouter proxy, proof proxy, block↔time), watcher/, docs/AI.md
+frontend/      React app — landing, dashboard, cover, underwrite, claims, activity, docs
+README.md · list.md (candidate incidents) · package.json (workspace root) · .env.example
 ```
+
+Everything generated — `contracts/artifacts`, `contracts/cache`, `contracts/typechain-types`,
+`frontend/dist`, `node_modules`, `.env` — is ignored; nothing built or secret is committed.

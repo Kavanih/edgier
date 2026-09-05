@@ -1,7 +1,8 @@
 import { Contract, JsonRpcProvider } from "ethers";
 import { proofProvider } from "@gluwa/usc-sdk";
 import * as dotenv from "dotenv";
-dotenv.config();
+import { resolve as _r } from "node:path";
+dotenv.config({ path: _r(__dirname, "../../.env") });
 
 /**
  * Keyless end-to-end validation of the READ path.

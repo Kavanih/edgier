@@ -4,17 +4,18 @@
   "private": true,
   "description": "Parametric on-chain cover settled by Attestcoin Protocol proofs of Ethereum transactions.",
   "scripts": {
-    "build": "hardhat compile",
-    "test": "hardhat test",
-    "preflight": "tsx scripts/check-attestation.ts",
-    "verify:live": "tsx scripts/verify-live.ts",
-    "deploy:creditcoin": "hardhat run scripts/deploy-creditcoin.ts --network cc3testnet",
-    "settle:mainnet": "hardhat run scripts/settle-mainnet-incident.ts --network cc3testnet",
-    "watch": "tsx watcher/src/index.ts",
-    "ai": "tsx server/ai.ts",
-    "web": "npm --prefix web run dev",
-    "web:build": "npm --prefix web run build",
-    "dev": "tsx scripts/dev.ts"
+    "build": "npm -w contracts run build && npm -w frontend run build",
+    "test": "npm -w contracts test",
+    "typecheck": "npm -w contracts run typecheck && npm -w backend run typecheck",
+    "dev": "tsx backend/dev.ts",
+    "ai": "npm -w backend run ai",
+    "watch": "npm -w backend run watch",
+    "web": "npm -w frontend run dev",
+    "preflight": "npm -w contracts run preflight",
+    "verify:live": "npm -w contracts run verify:live",
+    "deploy:creditcoin": "npm -w contracts run deploy:creditcoin",
+    "settle:mainnet": "npm -w contracts run settle:mainnet",
+    "verify:bundle": "npm -w contracts run verify:bundle"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
@@ -28,5 +29,10 @@
     "@gluwa/usc-sdk": "^0.18.0",
     "@openzeppelin/contracts": "^5.0.2",
     "ethers": "^6.13.2"
-  }
+  },
+  "workspaces": [
+    "contracts",
+    "backend",
+    "frontend"
+  ]
 }

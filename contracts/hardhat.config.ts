@@ -1,8 +1,10 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import * as dotenv from "dotenv";
+import { resolve } from "node:path";
 
-dotenv.config();
+// One .env for the whole repo, at the root.
+dotenv.config({ path: resolve(__dirname, "..", ".env") });
 
 const pk = process.env.DEPLOYER_PRIVATE_KEY;
 const accounts = pk ? [pk] : [];
@@ -27,7 +29,7 @@ const config: HardhatUserConfig = {
     },
   },
   paths: {
-    sources: "./contracts",
+    sources: "./src",
     tests: "./test",
   },
 };

@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 
 /** Runs the AI sidecar and the Vite dev server together, prefixing their output. */
 const procs = [
-  { name: "ai ", cmd: "npx", args: ["tsx", "server/ai.ts"] },
-  { name: "web", cmd: "npm", args: ["--prefix", "web", "run", "dev"] },
+  { name: "ai ", cmd: "npx", args: ["tsx", "backend/server/ai.ts"] },
+  { name: "web", cmd: "npm", args: ["--prefix", "frontend", "run", "dev"] },
 ];
 
 for (const p of procs) {

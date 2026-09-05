@@ -1,7 +1,8 @@
 import { JsonRpcProvider } from "ethers";
 import { chainInfo } from "@gluwa/usc-sdk";
 import * as dotenv from "dotenv";
-dotenv.config();
+import { resolve as _r } from "node:path";
+dotenv.config({ path: _r(__dirname, "../../.env") });
 
 /**
  * Preflight. Answers, in one call each, the questions the demo plan depends on:
