@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Interface, type Contract } from "ethers";
-import { connectWallet, D, explorerTx, provider, read, type Actor } from "./chain";
+import { connectWallet, D, explorerTx, forgetWallet, provider, read, reconnectWallet, type Actor } from "./chain";
 import { clearBusy, toast } from "../components/Toasts";
 
 /**
@@ -202,6 +202,9 @@ export function useProtocol() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   /** The connected wallet, or null. Everything downstream only sees an Actor. */
   const [actor, setActor] = useState<Actor | null>(null);
+
+  // Returning visitor: pick the wallet back up without a prompt.
+  useEffect(() => { reconnectWallet().then((a) => { if (a) setActor(a); }); }, []);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Two independent failures, deliberately kept apart. The background poll
@@ -245,8 +248,8 @@ export function useProtocol() {
   useEffect(() => {
     const eth = (window as unknown as { ethereum?: { on?: (e: string, h: (...a: unknown[]) => void) => void; removeListener?: (e: string, h: (...a: unknown[]) => void) => void } }).ethereum;
     if (!eth?.on) return;
-    const onAccounts = () => { setActor((a) => (a ? null : a)); toast("info", "Wallet changed — reconnect to continue"); };
-    const onChain = () => { setActor((a) => (a ? null : a)); toast("info", "Network changed — reconnect to continue"); };
+    const onAccounts = () => { reconnectWallet().then((a) => { setActor(a); if (a) toast("info", `Now signing as ${a.address.slice(0, 6)}…${a.address.slice(-4)}`); }); };
+    const onChain = () => { reconnectWallet().then((a) => { setActor(a); if (!a) toast("info", "Wallet is on another network — connect to switch back to Creditcoin"); }); };
     eth.on("accountsChanged", onAccounts);
     eth.on("chainChanged", onChain);
     return () => { eth.removeListener?.("accountsChanged", onAccounts); eth.removeListener?.("chainChanged", onChain); };
@@ -308,7 +311,7 @@ export function useProtocol() {
     }
   }, []);
 
-  const disconnect = useCallback(() => setActor(null), []);
+  const disconnect = useCallback(() => { forgetWallet(); setActor(null); }, []);
 
   return {
     actor, connect, disconnect, snap, refresh, act, busy,

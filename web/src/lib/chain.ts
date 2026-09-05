@@ -34,8 +34,32 @@ export async function connectWallet(): Promise<Actor> {
     }] });
   }
   const signer = await new BrowserProvider(eth as never).getSigner();
+  localStorage.setItem(REMEMBER, "1");
   return { label: "your wallet", address: await signer.getAddress(), signer };
 }
+
+const REMEMBER = "edgier.wallet";
+
+/**
+ * Silent reconnect on page load. `eth_accounts` returns the accounts the site
+ * is already authorised for WITHOUT prompting (unlike `eth_requestAccounts`),
+ * so a returning visitor is signed in at once. Only if the wallet is on the
+ * right chain — a chain switch is a prompt, and prompts belong to a click.
+ */
+export async function reconnectWallet(): Promise<Actor | null> {
+  const eth = injected();
+  if (!eth || localStorage.getItem(REMEMBER) !== "1") return null;
+  try {
+    const accounts = (await eth.request({ method: "eth_accounts" })) as string[];
+    if (!accounts?.length) return null;
+    const chain = (await eth.request({ method: "eth_chainId" })) as string;
+    if (chain.toLowerCase() !== hexChainId.toLowerCase()) return null;
+    const signer = await new BrowserProvider(eth as never).getSigner();
+    return { label: "your wallet", address: await signer.getAddress(), signer };
+  } catch { return null; }
+}
+
+export function forgetWallet() { localStorage.removeItem(REMEMBER); }
 
 const abi = (name: keyof typeof deployment.abis) => deployment.abis[name] as unknown as InterfaceAbi;
 
