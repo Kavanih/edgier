@@ -12,7 +12,7 @@ Submission for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-20
 | | |
 |---|---|
 | **Live app** | `npm run dev` → http://localhost:5173 (reads the live testnet; wallet needed to act) |
-| **Contracts** | PolicyManager [`0xAc4B…0198`](https://creditcoin-testnet.blockscout.com/address/0xAc4B45EFe11AA77870731c3bA758f4B3967e0198) · ClaimVerifier [`0x1F68…31A3`](https://creditcoin-testnet.blockscout.com/address/0x1F68dFb0c07F3438ABc7Af812d633A6f426B31A3) · CoverPool [`0xa338…475F`](https://creditcoin-testnet.blockscout.com/address/0xa338Bd92284D3E6BbD2048Db3da47C9b9115475F) |
+| **Contracts** | PolicyManager [`0xc8E5…6Ed7`](https://creditcoin-testnet.blockscout.com/address/0xc8E5a718E4419DAAbf3FD281596512Fe1C196Ed7) · ClaimVerifier [`0x5134…8229`](https://creditcoin-testnet.blockscout.com/address/0x5134b05649e45DbFaa4d92d4CC4ED57D92888229) · CoverPool [`0xD93b…177f`](https://creditcoin-testnet.blockscout.com/address/0xD93b1268e87271b48124DAB28Af7b56EC571177f) |
 | **Chain** | Creditcoin CC3 Testnet, EVM chain id 102031 |
 | **Proven** | Five real Ethereum mainnet exploits, each settled on-chain against a proof of the actual exploit transaction — see [Verified live](#verified-live) |
 
@@ -54,7 +54,7 @@ A policy names an EVM contract and one precisely-defined loss event:
 |---|---|---|
 | `ADMIN_UPGRADE` | EIP-1967 `Upgraded(address)` or `OwnershipTransferred(...)` emitted by the insured contract | rug via proxy upgrade |
 | `EMERGENCY_PAUSE` | OpenZeppelin `Paused(address)` emitted by the insured contract | protocol froze itself |
-| `LARGE_OUTFLOW` | ERC-20 `Transfer` **from** the insured contract, `value ≥ threshold` | treasury drain |
+| `LARGE_OUTFLOW` | ERC-20 `Transfer` **from** the insured contract, emitted by the policy's named **token**, `value ≥ threshold` | treasury drain |
 
 When the event happens, Creditcoin can prove the transaction was included in an Ethereum
 block. `ClaimVerifier` hands that proof to the **BlockProver precompile**, decodes the
@@ -114,18 +114,22 @@ on-chain transfer of 10,000 mUSD.
 
 | # | Incident | Loss proven | Exploit tx (Ethereum) | Settlement (Creditcoin) |
 |---|---|---|---|---|
-| 1 | Ronin Bridge, 2022 | 25.5M USDC | [`0xed2c72…`](https://etherscan.io/tx/0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08) | [`0xe719ec…`](https://creditcoin-testnet.blockscout.com/tx/0xe719ecebf947c5a4ad872608980e940cba5f4435d3ebc38c8c6ed4e6757e7093) |
-| 2 | Euler Finance, 2023 | 38.9M DAI | [`0xc310a0…`](https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d) | [`0xb48b92…`](https://creditcoin-testnet.blockscout.com/tx/0xb48b92f7d02a4a700686f24099d119f9f5c076b7f94dce9cde29a86627ba7b8f) |
-| 3 | Harmony Horizon Bridge, 2022 | 6.07M DAI | [`0xb51368…`](https://etherscan.io/tx/0xb51368d8c2b857c5f7de44c57ff32077881df9ecb60f0450ee1226e1a7b8a0dd) | [`0x406449…`](https://creditcoin-testnet.blockscout.com/tx/0x406449980de0206d55da84062f307d32e2e09a91b7fc2e7f6b88d41824a47382) |
-| 5 | Nomad Bridge, 2022 | 10,000 WETH | [`0x56b455…`](https://etherscan.io/tx/0x56b4551dd7e8f475a2c70c7a7e53a5e9a1d5e09f33dac0d89b7816748a8caaf6) | [`0x43d028…`](https://creditcoin-testnet.blockscout.com/tx/0x43d0281bc160e8dfc3e21327d0d9a4f00e385af1575222c5226998fef6289f67) |
-| 6 | Poly Network, 2021 | 259.7B SHIB | [`0xe05dcd…`](https://etherscan.io/tx/0xe05dcda4f1b779989b0aa2bd3fa262d4e6e13343831cb337c2c5beb2266138f5) | [`0xdcbd7b…`](https://creditcoin-testnet.blockscout.com/tx/0xdcbd7b2693e9ef1539a450de5dd3339b02a4a64b8ec0269764ead326ded3923e) |
+| 1 | Ronin Bridge, 2022 | 25.5M USDC | [`0xed2c72…`](https://etherscan.io/tx/0xed2c72ef1a552ddaec6dd1f5cddf0b59a8f37f82bdda5257d9c7c37db7bb9b08) | [`0x6fd75a…`](https://creditcoin-testnet.blockscout.com/tx/0x6fd75aa524d5c16cfa4cdcf90bf2e8c98dd3eb878793415515a4709d33ca8b17) |
+| 2 | Euler Finance, 2023 | 38.9M DAI | [`0xc310a0…`](https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d) | [`0x44c190…`](https://creditcoin-testnet.blockscout.com/tx/0x44c1906886475604f4a8e3d06e93a1f8dbe43feadee026d6c513088a671e006f) |
+| 3 | Harmony Horizon Bridge, 2022 | 6.07M DAI | [`0xb51368…`](https://etherscan.io/tx/0xb51368d8c2b857c5f7de44c57ff32077881df9ecb60f0450ee1226e1a7b8a0dd) | [`0x559b38…`](https://creditcoin-testnet.blockscout.com/tx/0x559b3867bd2d4c544175b8901c5c350f6c79b947d150a93995bc613318a1ebbb) |
+| 4 | Poly Network, 2021 | 259.7B SHIB | [`0xe05dcd…`](https://etherscan.io/tx/0xe05dcda4f1b779989b0aa2bd3fa262d4e6e13343831cb337c2c5beb2266138f5) | [`0xe2b9bb…`](https://creditcoin-testnet.blockscout.com/tx/0xe2b9bbfb17d690c724c10a5b1deb4cfb9506b3dd798c210292a1e82acbfc697d) |
+| 5 | Nomad Bridge, 2022 | 10,000 WETH | [`0x56b455…`](https://etherscan.io/tx/0x56b4551dd7e8f475a2c70c7a7e53a5e9a1d5e09f33dac0d89b7816748a8caaf6) | [`0x5987ef…`](https://creditcoin-testnet.blockscout.com/tx/0x5987ef147ee645a3c9ce4d8c7fe74ea67cb9104ce38c93d9e293f0b586385839) |
 
-**Policy #4 is the instructive one.** It was written on Poly Network with a threshold
-*above* what the transaction moved. The precompile verified the proof, `TriggerLib` said
-the trigger was not met, and nothing was paid. It was then
+Each `Transfer` had to be emitted by the policy's named token — USDC, DAI, DAI, SHIB, WETH — to
+match; that binding is what stops a fake token from triggering a payout.
+
+**The refusal worth showing.** On the first deployment of these contracts a Poly Network policy
+was written with a threshold *above* what the transaction moved. The precompile verified the
+proof, `TriggerLib` said the trigger was not met, nothing was paid, and the policy was then
 [expired](https://creditcoin-testnet.blockscout.com/tx/0x8a583e89a6d82675a26d2e4bdb129efb69d913e1cf8a964a1e486ee7d650ad8e)
 against the attested mainnet height, releasing its capital. A refusal and an expiry, both
-live, both because the contract was right.
+live, both because the contract was right. (That deployment was superseded when a review found
+the emitter-binding bug above; its transactions remain on-chain as history.)
 
 `npm run settle:mainnet` reproduces all of it from `scripts/incidents.ts`.
 
@@ -153,7 +157,7 @@ ClaimVerifier for payouts and only the ChainInfo precompile for expiry; the Clai
 trusts only the BlockProver precompile, and calls it first. The owner can wire contracts and
 set rates. The owner cannot pay, deny, or expire a claim.
 
-Two rules in `TriggerLib` are the difference between plausible and sound:
+Three rules in `TriggerLib` and `PolicyManager` are the difference between plausible and sound:
 
 1. **Inclusion is not success.** A reverted transaction is in a block and fully provable.
    Paying on it would let an attacker send a *failing* `upgradeTo` on purpose. Every trigger
@@ -162,6 +166,18 @@ Two rules in `TriggerLib` are the difference between plausible and sound:
    upgrade reached through a multicall or a governance executor has different calldata every
    time but always emits `Upgraded`. And because the signatures are EVM standards, policies
    written here matched Ronin, Euler, Harmony, Nomad and Poly Network unmodified.
+3. **A log is evidence only if the right contract emitted it.** `Upgraded` and `Paused`
+   must come from the insured contract; a `Transfer` out of it must come from the token the
+   policy names. Without that binding anyone could deploy a contract that emits a fake
+   `Transfer(insured, x, huge)`, have it proven (inclusion is cheap), and drain every outflow
+   policy. Found in review; fixed before it could matter.
+
+Two further guards live in `PolicyManager`: cover cannot start before the source chain's
+attested height (so a loss that is provable today cannot be insured today) unless the
+deployment sets `allowBackdatedCover` — **on for this testnet, deliberately, so the
+historical incidents below can be insured; off in production** — and a policy stays
+claimable for `CLAIM_GRACE_BLOCKS` (~1 day) after its window closes, so a loss landing just
+before `endBlock` cannot be voided by front-running the claim with `expire()`.
 
 ## The proof path
 
@@ -236,7 +252,7 @@ oracle and no authority. `docs/AI.md`.
 ## Tests and validation
 
 ```bash
-npm test             # 20 Hardhat tests — settlement logic with the precompiles mocked
+npm test             # 24 Hardhat tests — settlement logic with the precompiles mocked
 npm run preflight    # what can Creditcoin prove right now? (ChainInfo, keyless)
 npm run verify:live  # full read path against the live precompiles with OUR ABI (keyless)
 npm run settle:mainnet   # the five incidents, end to end, on the live network (funded key)
@@ -247,7 +263,9 @@ wrong emitter ignored; a stranger can settle; outside-window rejected; precompil
 proof; trigger kinds distinguished; `LARGE_OUTFLOW` threshold and direction; no double
 settlement; expiry refused before the attested height passes; capital released on expiry;
 capital locked while live; the pricing curve at 2%, 90% and 100%; the `maxPremium` guard;
-batch settlement; batch length / mixed-chain / partial-failure / rejected-proof cases.
+batch settlement; batch length / mixed-chain / partial-failure / rejected-proof cases; a
+`Transfer` from an impostor contract is ignored; outflow policies must name a token; windows
+in the attested past are refused unless back-dating is allowed; expiry waits out the grace period.
 
 Network facts were confirmed against the live RPC and the Creditcoin docs, not assumed:
 chain id 102031 (`eth_chainId` → `0x18e8f`), proof service `prover.cc3-testnet`, mainnet
@@ -314,6 +332,8 @@ contract for new losses: set `INSURED_CONTRACT_ADDRESS` and `npm run watch`.
   not the instant it lands.
 - **Source chains are what Attestcoin attests** — Ethereum mainnet and Sepolia today. The
   contracts and triggers are EVM-generic; the reach is Creditcoin's.
+- **This testnet deployment allows back-dated cover.** That is what makes the historical
+  settlements possible, and it is exactly what a production deployment must not allow.
 
 ## Layout
 
