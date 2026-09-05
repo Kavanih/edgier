@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../components/Icons";
 import { INCIDENTS, blockscoutTx, etherscanTx } from "../lib/incidents";
 import { app } from "../lib/router";
-import { amount } from "../lib/format";
 import { useCounter, useReveal, useTypewriter } from "../lib/motion";
 import type { Snapshot } from "../lib/useProtocol";
 
@@ -182,7 +181,7 @@ function Reveal({ children, className = "", id }: { children: ReactNode; classNa
 }
 
 function Stats({ snap }: { snap: Snapshot | null }) {
-  const pool = snap ? Number(amount(snap.pool.totalAssets, 0).replace(/,/g, "")) : 0;
+  const pool = snap ? Math.round(Number(snap.pool.totalAssets) / 1e18) : 0;
   const paid = snap ? snap.policies.filter((p) => p.status === 2).length : 0;
   const a = useCounter(pool), b = useCounter(paid, 600), c = useCounter(571354);
   return (

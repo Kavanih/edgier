@@ -65,6 +65,7 @@ export function describePolicies(policies: PolicyView[]) {
     insuredContract: p.trigger.target,
     trigger: KIND[Number(p.trigger.kind)],
     threshold: p.trigger.threshold.toString(),
+    token: p.trigger.token,
     startBlock: p.startBlock.toString(),
     endBlock: p.endBlock.toString(),
     coverAmount: p.coverAmount.toString(),

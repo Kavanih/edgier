@@ -57,7 +57,7 @@ export interface PolicyView {
   premiumPaid: bigint;
   startBlock: bigint;
   endBlock: bigint;
-  trigger: { chainKey: bigint; target: string; kind: bigint; threshold: bigint };
+  trigger: { chainKey: bigint; target: string; kind: bigint; threshold: bigint; token: string };
   status: number;
 }
 
@@ -101,36 +101,53 @@ function describe(name: string, args: readonly unknown[]): string {
 }
 
 /**
- * One `eth_getLogs` per contract, from the deploy block. Scanning from genesis
- * is fine on a local node and never returns on a public RPC for a chain with
- * millions of blocks — which is how the live UI sat on "connecting" forever.
+ * Event log, incrementally.
+ *
+ * A single query from the deploy block to "latest" grows without bound and the
+ * public RPC times out past ~30k blocks — which would have silently blanked
+ * every settlement link within days. Instead: chunked catch-up from the deploy
+ * block on first load, then only [cursor+1, latest] on each poll, merged into
+ * what we already have. A failed query is reported, not swallowed.
  */
-async function loadEvents(): Promise<LogLine[]> {
-  const from = (D as { deployBlock?: number }).deployBlock ?? 0;
-  const out: LogLine[] = [];
-  for (const src of EVENT_SOURCES) {
-    const c = src.contract();
-    let logs;
-    try {
-      logs = await c.queryFilter("*", from, "latest");
-    } catch {
-      continue;
+const CHUNK = 4_000;
+const eventState: { cursor: number; lines: LogLine[]; error: string | null } = {
+  cursor: ((D as { deployBlock?: number }).deployBlock ?? 1) - 1,
+  lines: [],
+  error: null,
+};
+
+async function loadEvents(): Promise<{ lines: LogLine[]; error: string | null }> {
+  const head = await provider.getBlockNumber();
+  let from = eventState.cursor + 1;
+  eventState.error = null;
+  while (from <= head) {
+    const to = Math.min(from + CHUNK - 1, head);
+    for (const src of EVENT_SOURCES) {
+      const c = src.contract();
+      let logs;
+      try {
+        logs = await c.queryFilter("*", from, to);
+      } catch (e) {
+        eventState.error = `event query ${from}–${to} failed: ${(e as Error).message.slice(0, 80)}`;
+        return { lines: eventState.lines, error: eventState.error };
+      }
+      for (const l of logs) {
+        if (!("eventName" in l) || !src.events.has(l.eventName)) continue;
+        const key = `${l.transactionHash}-${l.index}`;
+        if (eventState.lines.some((x) => x.key === key)) continue;
+        const args = l.args as unknown as readonly unknown[];
+        eventState.lines.push({
+          key, block: l.blockNumber, source: src.name, name: l.eventName,
+          detail: describe(l.eventName, args), txHash: l.transactionHash,
+          args: args.map((x) => (typeof x === "bigint" ? x.toString() : String(x))),
+        });
+      }
     }
-    for (const l of logs) {
-      if (!("eventName" in l) || !src.events.has(l.eventName)) continue;
-      const args = l.args as unknown as readonly unknown[];
-      out.push({
-        key: `${l.transactionHash}-${l.index}`,
-        block: l.blockNumber,
-        source: src.name,
-        name: l.eventName,
-        detail: describe(l.eventName, args),
-        txHash: l.transactionHash,
-        args: args.map((a) => (typeof a === "bigint" ? a.toString() : String(a))),
-      });
-    }
+    eventState.cursor = to;
+    from = to + 1;
   }
-  return out.sort((a, b) => b.block - a.block);
+  eventState.lines.sort((x, y) => y.block - x.block);
+  return { lines: eventState.lines, error: null };
 }
 
 async function holdingOf(addr: string): Promise<Holding> {
@@ -166,6 +183,7 @@ async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
         target: p.trigger.target,
         kind: p.trigger.kind,
         threshold: p.trigger.threshold,
+        token: p.trigger.token,
       },
       status: Number(p.status),
     });
@@ -204,8 +222,9 @@ export function useProtocol() {
       const core = await loadSnapshot(actor);
       setSnap((prev) => ({ ...core, events: prev?.events ?? [] }));
       setConnError(null);
-      const events = await loadEvents();
-      setSnap((prev) => (prev ? { ...prev, events } : prev));
+      const ev = await loadEvents();
+      setSnap((prev) => (prev ? { ...prev, events: ev.lines } : prev));
+      if (ev.error) toast("info", ev.error);
     } catch (e) {
       setConnError(
         `Cannot reach ${D.rpcUrl} — ${(e as Error).message}`,
@@ -266,6 +285,7 @@ export function useProtocol() {
         const err = e as { code?: string | number; shortMessage?: string; message?: string };
         const rejected = err.code === "ACTION_REJECTED" || err.code === 4001 || /user (rejected|denied)/i.test(err.message ?? "");
         if (rejected) { toast("info", `${label}: rejected in wallet`); return; }
+        if (err.code === "TIMEOUT") { toast("info", `${label}: still pending after 3 minutes — it will show once mined`); void refresh(); return; }
         const name = revertName(e);
         setActionError(
           name

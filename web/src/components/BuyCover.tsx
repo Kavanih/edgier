@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { parseEther } from "ethers";
+import { parseEther, parseUnits, isAddress } from "ethers";
 import { contractsFor, D, provider, read, type Actor } from "../lib/chain";
 import { amount, bpsPct, pctOfWad } from "../lib/format";
 import { Kind, KINDS } from "../lib/triggers";
@@ -22,8 +22,10 @@ export function BuyCover({
   const [kind, setKind] = useState<Kind>(Kind.ADMIN_UPGRADE);
   const [coverStr, setCoverStr] = useState("10000");
   const [thresholdStr, setThresholdStr] = useState("500");
-  const [startStr, setStartStr] = useState(String(D.startAttestedHeight));
-  const [endStr, setEndStr] = useState(String(D.startAttestedHeight + 100_000));
+  // Default window: from what Creditcoin has attested right now, for ~7 days.
+  const [startStr, setStartStr] = useState(snap.attestedHeight.toString());
+  const [endStr, setEndStr] = useState((snap.attestedHeight + 50_400n).toString());
+  const [tokenStr, setTokenStr] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -75,19 +77,23 @@ export function BuyCover({
 
   const spec = KINDS.find((k) => k.kind === kind)!;
   const overCapacity = cover > snap.pool.free;
+  const tokenMissing = kind === Kind.LARGE_OUTFLOW && !isAddress(tokenStr);
   const me = actor?.address ?? "";
 
+  /** Apply an AI draft to the form — after validating it. A model can return anything. */
   function applyDraft(d: PolicyDraft) {
-    if (d.kind !== undefined) setKind(Number(d.kind) as Kind);
-    if (d.coverAmount) setCoverStr(String(d.coverAmount).replace(/[^\d.]/g, ""));
-    if (d.threshold) setThresholdStr(String(d.threshold).replace(/[^\d.]/g, ""));
-    if (d.windowBlocks) setEndStr((start + BigInt(Math.max(1, Math.floor(d.windowBlocks)))).toString());
+    const k = Number(d.kind);
+    if (Number.isInteger(k) && k >= 0 && k <= 2) setKind(k as Kind);
+    const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+    const cover = num(d.coverAmount); if (cover) setCoverStr(String(cover));
+    const thr = num(d.threshold); if (thr) setThresholdStr(String(thr));
+    const wb = num(d.windowBlocks); if (wb) setEndStr((start + BigInt(Math.floor(wb))).toString());
   }
 
   const [preset, setPreset] = useState<(typeof INCIDENTS)[number] | null>(null);
   function applyIncident(i: (typeof INCIDENTS)[number]) {
     setPreset(i);
-    setTarget(i.target); setChainKey(i.chainKey); setKind(i.kind);
+    setTarget(i.target); setChainKey(i.chainKey); setKind(i.kind); setTokenStr(i.tokenAddress);
     setThresholdStr((Number(i.threshold) / 10 ** i.decimals).toString());
     setStartStr(String(i.block - 50)); setEndStr(String(i.block + 50));
     setStartDate(""); setEndDate("");
@@ -104,9 +110,11 @@ export function BuyCover({
       await provider.waitForTransaction(tx.hash, 1, 180_000);
     }
     // LARGE_OUTFLOW thresholds are in the token's own units; a preset carries its decimals.
+    // parseUnits, not a double: 1e6 DAI through a float is not 1e24 wei exactly.
     const dec = preset && preset.target.toLowerCase() === target.toLowerCase() ? preset.decimals : 18;
-    const threshold = kind === Kind.LARGE_OUTFLOW ? BigInt(Math.round(Number(thresholdStr || "0") * 10 ** dec)) : 0n;
-    return c.pm.buyPolicy({ chainKey, target, kind, threshold }, cover, start, end, maxPremium);
+    const threshold = kind === Kind.LARGE_OUTFLOW ? parseUnits(thresholdStr || "0", dec) : 0n;
+    const token = kind === Kind.LARGE_OUTFLOW ? tokenStr : "0x0000000000000000000000000000000000000000";
+    return c.pm.buyPolicy({ chainKey, target, kind, threshold, token }, cover, start, end, maxPremium);
   }
 
   return (
@@ -151,6 +159,12 @@ export function BuyCover({
               <input value={thresholdStr} onChange={(e) => setThresholdStr(e.target.value)} />
             </label>
           ) : <div />}
+          {kind === Kind.LARGE_OUTFLOW && (
+            <label className="field span-2">
+              <span>Token · the ERC-20 whose Transfer out of the contract counts</span>
+              <input value={tokenStr} onChange={(e) => setTokenStr(e.target.value)} spellCheck={false} placeholder="0x… (e.g. USDC, DAI, WETH)" />
+            </label>
+          )}
           <div className="span-2 window-head">
             <span className="field-title">Coverage period</span>
             <span className="muted small">pick dates, or set the source-chain blocks directly — the policy stores blocks</span>
@@ -182,7 +196,8 @@ export function BuyCover({
 
         {overCapacity && <div className="note note-bad"><Icon name="warn" size={14} /> Cover exceeds free capacity ({amount(snap.pool.free)} mUSD).</div>}
 
-        <button className="btn btn-primary btn-block" disabled={!!busy || !quote || overCapacity || !actor} onClick={() => act("Buy policy", buy)}>
+        {tokenMissing && <div className="note"><Icon name="info" size={14} /> An outflow policy names the token whose <code>Transfer</code> counts — otherwise any contract could emit a fake one.</div>}
+        <button className="btn btn-primary btn-block" disabled={!!busy || !quote || overCapacity || !actor || tokenMissing} onClick={() => act("Buy policy", buy)}>
           <Icon name="shield" size={15} /> {actor ? `Buy this policy as ${actor.label}` : "Connect a wallet to buy"}
         </button>
 
@@ -216,6 +231,7 @@ export function BuyCover({
             <li>Only <em>successful</em> transactions count — <code>receiptStatus == 1</code>. Inclusion is not success.</li>
             <li>Matched on event logs, not calldata, so it catches the event however it was reached.</li>
             <li>The proof decides the timing too: the source block must lie inside the window.</li>
+            {kind === Kind.LARGE_OUTFLOW && <li>The <code>Transfer</code> must be emitted by the named token — a fake token cannot trigger it.</li>}
           </ul>
         </section>
       </div>

@@ -17,6 +17,7 @@ describe("Edgier settlement", () => {
   const COVER = ethers.parseEther("1000");
   const SEPOLIA_CHAINKEY = 1;
   const INSURED = "0x00000000000000000000000000000000000000A1";
+  const TOKEN = "0x00000000000000000000000000000000000000E0"; // the ERC-20 an outflow policy names
 
   const SIG_UPGRADED = ethers.id("Upgraded(address)");
   const SIG_PAUSED = ethers.id("Paused(address)");
@@ -32,7 +33,7 @@ describe("Edgier settlement", () => {
     const pool = await ethers.deployContract("CoverPool", [await usd.getAddress(), owner.address]);
     const chainInfo = await ethers.deployContract("MockChainInfo");
     const pm = await ethers.deployContract("PolicyManager", [
-      await pool.getAddress(), await chainInfo.getAddress(), owner.address,
+      await pool.getAddress(), await chainInfo.getAddress(), owner.address, /* allowBackdatedCover */ true,
     ]);
     const prover = await ethers.deployContract("MockBlockProver");
     const decoder = await ethers.deployContract("MockEvmV1Decoder");
@@ -90,7 +91,7 @@ describe("Edgier settlement", () => {
     data: "0x",
   });
 
-  const transferLog = (from: string, value: bigint, emitter = INSURED) => ({
+  const transferLog = (from: string, value: bigint, emitter = TOKEN) => ({
     address_: emitter,
     topics: [
       SIG_TRANSFER,
@@ -107,7 +108,7 @@ describe("Edgier settlement", () => {
     target = INSURED,
   ) {
     await as(f.pm, f.buyer).buyPolicy(
-      { chainKey: SEPOLIA_CHAINKEY, target, kind, threshold },
+      { chainKey: SEPOLIA_CHAINKEY, target, kind, threshold, token: kind === TriggerKind.LARGE_OUTFLOW ? TOKEN : ethers.ZeroAddress },
       COVER, 100n, 200n, ethers.MaxUint256,
     );
     return (await f.pm.nextPolicyId()) - 1n;
@@ -257,7 +258,7 @@ describe("Edgier settlement", () => {
     const f = await deploy();
     const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
 
-    await f.chainInfo.setLatest(SEPOLIA_CHAINKEY, 250, true);
+    await f.chainInfo.setLatest(SEPOLIA_CHAINKEY, 200 + 7200 + 1, true);
     await expect(f.pm.expire(id)).to.emit(f.pm, "PolicyExpired");
     expect(await f.pool.lockedCapacity()).to.equal(0n);
   });
@@ -295,7 +296,7 @@ describe("Edgier settlement", () => {
     const f = await deploy();
     const trigger = {
       chainKey: SEPOLIA_CHAINKEY, target: INSURED,
-      kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n,
+      kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n, token: ethers.ZeroAddress,
     };
     const premium = await f.pm.quote(TriggerKind.ADMIN_UPGRADE, COVER, 100n);
 
@@ -351,7 +352,7 @@ describe("Edgier settlement", () => {
     const id1 = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
 
     await as(f.pm, f.buyer).buyPolicy(
-      { chainKey: 3, target: INSURED, kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n },
+      { chainKey: 3, target: INSURED, kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n, token: ethers.ZeroAddress },
       COVER, 100n, 200n, ethers.MaxUint256,
     );
     const id2 = (await f.pm.nextPolicyId()) - 1n;
@@ -398,5 +399,65 @@ describe("Edgier settlement", () => {
         [emptyMerkle], emptyContinuity,
       ),
     ).to.be.revertedWithCustomError(f.verifier, "ProofRejected");
+  });
+  // --- emitter binding, back-dating, grace --------------------------------
+
+  it("ignores a Transfer emitted by a contract other than the named token", async () => {
+    const f = await deploy();
+    const id = await buyCover(f, TriggerKind.LARGE_OUTFLOW, ethers.parseEther("1"));
+    const IMPOSTOR = "0x0000000000000000000000000000000000000BAD";
+
+    // Right shape, right "from", huge value — wrong emitter. Must not pay.
+    await expect(
+      f.verifier.submitClaim(
+        id, 150n, encodeBlob({ logs: [transferLog(INSURED, ethers.parseEther("1000000"), IMPOSTOR)] }),
+        emptyMerkle, emptyContinuity,
+      ),
+    ).to.be.revertedWithCustomError(f.verifier, "TriggerNotMet");
+  });
+
+  it("requires an outflow policy to name its token", async () => {
+    const f = await deploy();
+    await expect(
+      as(f.pm, f.buyer).buyPolicy(
+        { chainKey: SEPOLIA_CHAINKEY, target: INSURED, kind: TriggerKind.LARGE_OUTFLOW, threshold: 1n, token: ethers.ZeroAddress },
+        COVER, 100n, 200n, ethers.MaxUint256,
+      ),
+    ).to.be.revertedWithCustomError(f.pm, "TokenRequired");
+  });
+
+  it("refuses a window in the attested past unless back-dating is allowed", async () => {
+    const [owner, , buyer] = await ethers.getSigners();
+    const usd = await ethers.deployContract("MockUSD");
+    const pool = await ethers.deployContract("CoverPool", [await usd.getAddress(), owner.address]);
+    const chainInfo = await ethers.deployContract("MockChainInfo");
+    const pm = await ethers.deployContract("PolicyManager", [
+      await pool.getAddress(), await chainInfo.getAddress(), owner.address, /* allowBackdatedCover */ false,
+    ]);
+    await pool.setPolicyManager(await pm.getAddress());
+    await usd.mint(buyer.address, ethers.parseEther("10000"));
+    await as(usd, buyer).approve(await pool.getAddress(), ethers.MaxUint256);
+    await usd.mint(owner.address, ethers.parseEther("100000"));
+    await usd.approve(await pool.getAddress(), ethers.MaxUint256);
+    await pool.deposit(ethers.parseEther("50000"), owner.address);
+    await chainInfo.setLatest(SEPOLIA_CHAINKEY, 1000, true);
+
+    const trigger = { chainKey: SEPOLIA_CHAINKEY, target: INSURED, kind: TriggerKind.ADMIN_UPGRADE, threshold: 0n, token: ethers.ZeroAddress };
+    await expect(as(pm, buyer).buyPolicy(trigger, COVER, 900n, 1100n, ethers.MaxUint256))
+      .to.be.revertedWithCustomError(pm, "BackdatedWindow");
+    await expect(as(pm, buyer).buyPolicy(trigger, COVER, 1000n, 1100n, ethers.MaxUint256))
+      .to.emit(pm, "PolicyBought");
+  });
+
+  it("keeps a policy claimable for the grace period after its window", async () => {
+    const f = await deploy();
+    const id = await buyCover(f, TriggerKind.ADMIN_UPGRADE);
+
+    // Attested just past endBlock: a loss at block 199 is provable now, so expiry must wait.
+    await f.chainInfo.setLatest(SEPOLIA_CHAINKEY, 205, true);
+    await expect(f.pm.expire(id)).to.be.revertedWithCustomError(f.pm, "NotYetExpired");
+
+    await f.verifier.submitClaim(id, 199n, encodeBlob({ logs: [upgradedLog()] }), emptyMerkle, emptyContinuity);
+    expect((await f.pm.policies(id)).status).to.equal(2);
   });
 });

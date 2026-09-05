@@ -57,7 +57,7 @@ async function settle(inc: Incident, c: { pm: any; verifier: any; usd: any; buil
   const next = await c.pm.nextPolicyId();
   for (let i = 1n; i < next; i++) {
     const p = await c.pm.policies(i);
-    if (p.trigger.target.toLowerCase() === inc.target.toLowerCase() && p.trigger.chainKey === BigInt(inc.chainKey) &&
+    if (p.trigger.target.toLowerCase() === inc.target.toLowerCase() && p.trigger.chainKey === BigInt(inc.chainKey) && p.trigger.token.toLowerCase() === inc.tokenAddress.toLowerCase() &&
         p.trigger.threshold === inc.threshold &&
         p.startBlock <= BigInt(inc.block) && p.endBlock >= BigInt(inc.block)) {
       if (p.status === 2n) { console.log(`   already settled as policy #${i} — skipping`); return { name: inc.name, policyId: i, status: "CLAIMED (earlier)" }; }
@@ -68,7 +68,7 @@ async function settle(inc: Incident, c: { pm: any; verifier: any; usd: any; buil
   else {
     const premium = await c.pm.quote(inc.kind, COVER, end - start);
     console.log(`[1] buying ${ethers.formatEther(COVER)} mUSD LARGE_OUTFLOW cover · threshold ${ethers.formatUnits(inc.threshold, inc.decimals)} ${inc.token} · premium ${ethers.formatEther(premium)} mUSD`);
-    const tx = await c.pm.buyPolicy({ chainKey: inc.chainKey, target: inc.target, kind: inc.kind, threshold: inc.threshold }, COVER, start, end, (premium * 101n) / 100n);
+    const tx = await c.pm.buyPolicy({ chainKey: inc.chainKey, target: inc.target, kind: inc.kind, threshold: inc.threshold, token: inc.tokenAddress }, COVER, start, end, (premium * 101n) / 100n);
     await tx.wait();
     policyId = (await c.pm.nextPolicyId()) - 1n;
     console.log(`    policy #${policyId}`);

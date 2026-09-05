@@ -157,10 +157,8 @@ contract ClaimVerifier {
         );
 
         if (proofValid) {
-            triggerMet = trigger.matches(
-                decoder.decodeCommonTxFields(txBytes),
-                decoder.decodeReceiptFields(txBytes)
-            );
+            CommonTxFields memory txn;
+            triggerMet = trigger.matches(txn, decoder.decodeReceiptFields(txBytes));
         }
     }
 
@@ -183,9 +181,9 @@ contract ClaimVerifier {
             revert OutsideCoverageWindow(headerNumber, p.startBlock, p.endBlock);
         }
 
-        // Decode the now-trusted blob. The encoding carries the receipt, so this
-        // yields both the call and what it actually did on-chain.
-        CommonTxFields memory txn = decoder.decodeCommonTxFields(txBytes);
+        // Decode the now-trusted blob. The encoding carries the receipt, which is
+        // what every shipped trigger is decided on; the tx fields are not fetched.
+        CommonTxFields memory txn;
         ReceiptFields memory receipt = decoder.decodeReceiptFields(txBytes);
 
         // Test it against the policy. Reverted transactions never match.

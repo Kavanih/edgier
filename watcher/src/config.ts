@@ -22,19 +22,4 @@ export const config = {
   watcherKey: required("WATCHER_PRIVATE_KEY"),
   claimVerifier: required("CLAIM_VERIFIER_ADDRESS"),
   policyManager: required("POLICY_MANAGER_ADDRESS"),
-  /** The EVM contract we are watching for loss events. */
-  insuredContract: required("INSURED_CONTRACT_ADDRESS"),
-};
-
-/**
- * Calldata selectors worth a closer look. This is only a pre-filter to avoid
- * proving every transaction; the contract matches on receipt LOGS, so a loss
- * reached through a multicall is still settled once someone submits it.
- */
-export const LOSS_SELECTORS: Record<string, string> = {
-  "0x3659cfe6": "upgradeTo(address)",
-  "0x4f1ef286": "upgradeToAndCall(address,bytes)",
-  "0xf2fde38b": "transferOwnership(address)",
-  "0x8456cb59": "pause()",
-  "0xa9059cbb": "transfer(address,uint256)",
 };

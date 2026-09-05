@@ -52,11 +52,17 @@ async function main() {
   ]);
   await pool.waitForDeployment();
 
+  // allowBackdatedCover = true is a DEMO setting: it lets policies be written on
+  // windows in the attested past, so the five historical mainnet incidents can be
+  // insured and settled. A production deployment passes false.
+  const ALLOW_BACKDATED_COVER = (process.env.ALLOW_BACKDATED_COVER ?? "true") === "true";
   const policyManager = await ethers.deployContract("PolicyManager", [
     await pool.getAddress(),
     AttestcoinAddresses.CHAIN_INFO_PRECOMPILE,
     deployer.address,
+    ALLOW_BACKDATED_COVER,
   ]);
+  console.log(`allowBackdatedCover: ${ALLOW_BACKDATED_COVER}${ALLOW_BACKDATED_COVER ? "  (demo setting)" : ""}`);
   await policyManager.waitForDeployment();
 
   const claimVerifier = await ethers.deployContract("ClaimVerifier", [

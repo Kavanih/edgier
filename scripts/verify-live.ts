@@ -15,8 +15,10 @@ dotenv.config();
  */
 
 const CC3 = process.env.CC3_TESTNET_RPC_URL ?? "https://rpc.cc3-testnet.creditcoin.network";
-const SEPOLIA = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
-const CHAIN_KEY = Number(process.env.CHAIN_KEY ?? 1);
+const CHAIN_KEY = Number(process.env.CHAIN_KEY ?? 3);
+const SOURCE = process.env.SOURCE_RPC_URL ?? (CHAIN_KEY === 1
+  ? (process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com")
+  : (process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com"));
 
 const CHAIN_INFO = "0x0000000000000000000000000000000000000fD3";
 const BLOCK_PROVER = "0x0000000000000000000000000000000000000FD2";
@@ -52,7 +54,7 @@ function step(n: number, msg: string) {
 
 async function main() {
   const cc3 = new JsonRpcProvider(CC3);
-  const src = new JsonRpcProvider(SEPOLIA);
+  const src = new JsonRpcProvider(SOURCE);
 
   const chainInfo = new Contract(CHAIN_INFO, CHAIN_INFO_ABI, cc3);
   const prover = new Contract(BLOCK_PROVER, BLOCK_PROVER_ABI, cc3);

@@ -222,10 +222,12 @@ Answer in plain prose, 2-5 sentences, no JSON for this task. If asked something 
 
 // --- http -----------------------------------------------------------------
 
-function send(res: ServerResponse, status: number, body: unknown) {
+/** Only the dev server (proxying) and local browsers may call this. */
+const ALLOWED_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+function send(res: ServerResponse, status: number, body: unknown, origin?: string) {
   res.writeHead(status, {
     "content-type": "application/json",
-    "access-control-allow-origin": "*",
+    ...(origin && ALLOWED_ORIGIN.test(origin) ? { "access-control-allow-origin": origin } : {}),
     "access-control-allow-headers": "content-type",
   });
   res.end(JSON.stringify(body));
@@ -240,9 +242,12 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+const VALID_CHAIN_KEYS = new Set([1, 3]);
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
-  if (req.method === "OPTIONS") return send(res, 204, {});
+  const origin = req.headers.origin;
+  if (req.method === "OPTIONS") return send(res, 204, {}, origin);
 
   try {
     if (req.method === "GET" && url.pathname === "/api/ai/status") {
@@ -264,37 +269,40 @@ const server = createServer(async (req, res) => {
     // keeps one place responsible for talking to it. Read-only; nothing is signed.
     if (req.method === "GET" && url.pathname === "/api/proof") {
       const chainKey = Number(url.searchParams.get("chainKey") ?? 3);
+      if (!VALID_CHAIN_KEYS.has(chainKey)) return send(res, 400, { error: "chainKey must be 1 (Sepolia) or 3 (Ethereum mainnet)" }, origin);
       const tx = url.searchParams.get("tx") ?? "";
-      if (!/^0x[0-9a-fA-F]{64}$/.test(tx)) return send(res, 400, { error: "tx must be a 0x-prefixed 32-byte hash" });
+      if (!/^0x[0-9a-fA-F]{64}$/.test(tx)) return send(res, 400, { error: "tx must be a 0x-prefixed 32-byte hash" }, origin);
       const builder = new proofProvider.service.ProofBuilder(chainKey, PROOF_BUILDER_URL, 60_000);
       const r = await builder.getProof(tx);
-      if (!r.success || !r.data) return send(res, 502, { error: r.error ?? "proof service failed" });
-      return send(res, 200, r.data);
+      if (!r.success || !r.data) return send(res, 502, { error: r.error ?? "proof service failed" }, origin);
+      return send(res, 200, r.data, origin);
     }
 
     // Block number -> real timestamp (exact), and head for estimates.
     if (req.method === "GET" && url.pathname === "/api/source/block") {
       const chainKey = Number(url.searchParams.get("chainKey") ?? 3);
+      if (!VALID_CHAIN_KEYS.has(chainKey)) return send(res, 400, { error: "chainKey must be 1 or 3" }, origin);
       const b = url.searchParams.get("block") ?? "latest";
+      if (b !== "latest" && !/^\d{1,12}$/.test(b)) return send(res, 400, { error: "block must be a number or latest" }, origin);
       const out = await blockTimestamp(chainKey, b === "latest" ? "latest" : Number(b));
-      return send(res, 200, out);
+      return send(res, 200, out, origin);
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/ask") {
       const body = JSON.parse(await readBody(req)) as { question: string };
-      if (!body.question?.trim()) return send(res, 400, { error: "question is required" });
+      if (!body.question?.trim()) return send(res, 400, { error: "question is required" }, origin);
       const out = await complete(ASK_SYSTEM, body.question.slice(0, 2000), 350);
-      return send(res, 200, { model: out.model, answer: out.text.trim() });
+      return send(res, 200, { model: out.model, answer: out.text.trim() }, origin);
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/draft-policy") {
       const body = JSON.parse(await readBody(req)) as { intent: string; context: unknown };
-      if (!body.intent?.trim()) return send(res, 400, { error: "intent is required" });
+      if (!body.intent?.trim()) return send(res, 400, { error: "intent is required" }, origin);
       const out = await complete(
         DRAFT_SYSTEM,
         `Owner's request:\n${body.intent}\n\nPool context (JSON):\n${JSON.stringify(body.context)}`,
       );
-      return send(res, 200, { model: out.model, result: extractJson(out.text) });
+      return send(res, 200, { model: out.model, result: extractJson(out.text) }, origin);
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/analyse-incident") {
@@ -303,16 +311,16 @@ const server = createServer(async (req, res) => {
         ANALYSE_SYSTEM,
         `Proven transaction (JSON):\n${JSON.stringify(body.incident)}\n\nActive policies (JSON):\n${JSON.stringify(body.policies)}`,
       );
-      return send(res, 200, { model: out.model, result: extractJson(out.text) });
+      return send(res, 200, { model: out.model, result: extractJson(out.text) }, origin);
     }
 
-    send(res, 404, { error: "not found" });
+    send(res, 404, { error: "not found" }, origin);
   } catch (e) {
-    send(res, 500, { error: (e as Error).message });
+    send(res, 500, { error: (e as Error).message }, origin);
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`[ai] listening on http://127.0.0.1:${PORT}`);
   console.log(`[ai] key ${KEY ? "present" : "MISSING — set OPENROUTER_API_KEY in .env"}; free models only; cap ${DAILY_CAP}/day`);
 });

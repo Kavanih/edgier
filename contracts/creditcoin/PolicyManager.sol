@@ -38,6 +38,21 @@ contract PolicyManager is Ownable {
     uint256 public nextPolicyId = 1;
     mapping(uint256 => Policy) private _policies;
 
+    /// @notice Whether cover may be written on a window that lies in the source
+    ///         chain's attested past.
+    /// @dev In production this must be false: a back-dated window lets anyone
+    ///      buy cover on a loss that is already known and claim it at once. The
+    ///      testnet deployment sets it true on purpose, so the five historical
+    ///      mainnet incidents can be insured and settled as a demonstration.
+    bool public immutable allowBackdatedCover;
+
+    /// @notice Source-chain blocks after `endBlock` during which a claim can still
+    ///         be submitted before anyone may expire the policy.
+    /// @dev Without a grace period a loss landing just before `endBlock` could be
+    ///      voided by front-running the claim with `expire()` the moment the
+    ///      attestation that makes the loss provable also passes the window.
+    uint256 public constant CLAIM_GRACE_BLOCKS = 7_200; // ~1 day of Ethereum blocks
+
     // --- pricing ----------------------------------------------------------
     //
     // Cover is a claim on scarce pool capital, so it is priced like one: a
@@ -84,15 +99,20 @@ contract PolicyManager is Ownable {
     error NoAttestation();
     error BadCurve();
     error PremiumAboveMax(uint256 premium, uint256 maxPremium);
+    error BackdatedWindow(uint256 startBlock, uint64 attestedHeight);
+    error TokenRequired();
 
     modifier onlyClaimVerifier() {
         if (msg.sender != claimVerifier) revert NotClaimVerifier();
         _;
     }
 
-    constructor(CoverPool pool_, IChainInfo chainInfo_, address owner_) Ownable(owner_) {
+    constructor(CoverPool pool_, IChainInfo chainInfo_, address owner_, bool allowBackdatedCover_)
+        Ownable(owner_)
+    {
         pool = pool_;
         chainInfo = chainInfo_;
+        allowBackdatedCover = allowBackdatedCover_;
         baseRateBps[TriggerLib.Kind.ADMIN_UPGRADE]   = 500; // 5%  annualised floor
         baseRateBps[TriggerLib.Kind.EMERGENCY_PAUSE] = 300; // 3%
         baseRateBps[TriggerLib.Kind.LARGE_OUTFLOW]   = 800; // 8%
@@ -172,6 +192,16 @@ contract PolicyManager is Ownable {
     ) external returns (uint256 policyId) {
         if (coverAmount == 0) revert ZeroCover();
         if (endBlock <= startBlock) revert BadWindow();
+        if (trigger.kind == TriggerLib.Kind.LARGE_OUTFLOW && trigger.token == address(0)) revert TokenRequired();
+
+        // Cover starts no earlier than what Creditcoin has already attested, so a
+        // loss that is provable today cannot be insured today.
+        if (!allowBackdatedCover) {
+            IChainInfo.AttestedPoint memory latest =
+                chainInfo.get_latest_attestation_height_and_hash(trigger.chainKey);
+            if (!latest.exists) revert NoAttestation();
+            if (startBlock < latest.height) revert BackdatedWindow(startBlock, latest.height);
+        }
 
         uint256 premium = quote(trigger.kind, coverAmount, endBlock - startBlock);
         if (premium > maxPremium) revert PremiumAboveMax(premium, maxPremium);
@@ -221,7 +251,8 @@ contract PolicyManager is Ownable {
         IChainInfo.AttestedPoint memory latest =
             chainInfo.get_latest_attestation_height_and_hash(p.trigger.chainKey);
         if (!latest.exists) revert NoAttestation();
-        if (latest.height <= p.endBlock) revert NotYetExpired(latest.height, p.endBlock);
+        uint256 claimableUntil = p.endBlock + CLAIM_GRACE_BLOCKS;
+        if (latest.height <= claimableUntil) revert NotYetExpired(latest.height, claimableUntil);
 
         p.status = Status.EXPIRED;
         pool.releaseCapacity(p.coverAmount);
