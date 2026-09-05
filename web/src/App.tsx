@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Shell } from "./components/Shell";
-import { Toasts, toast } from "./components/Toasts";
+import { Toasts, toast, clearBusy } from "./components/Toasts";
 import { PoolPanel } from "./components/PoolPanel";
 import { BuyCover } from "./components/BuyCover";
 import { PolicyTable } from "./components/PolicyTable";
@@ -29,7 +29,16 @@ export default function App() {
   // Errors and progress surface as toasts rather than banners.
   useEffect(() => { if (actionError) { toast("error", actionError); dismissActionError(); } }, [actionError, dismissActionError]);
   useEffect(() => { if (connError) toast("error", connError); }, [connError]);
-  useEffect(() => { if (busy) toast("busy", `${busy}…`); }, [busy]);
+  // Busy → done: drop the spinner and confirm. Errors arrive through actionError.
+  const lastBusy = useRef<string | null>(null);
+  useEffect(() => {
+    if (busy) { toast("busy", `${busy}…`); lastBusy.current = busy; return; }
+    if (lastBusy.current) {
+      clearBusy();
+      if (!actionError) toast("ok", `${lastBusy.current} confirmed`);
+      lastBusy.current = null;
+    }
+  }, [busy, actionError]);
 
   if (route.kind === "landing") return <><Landing snap={snap} /><Toasts /></>;
 

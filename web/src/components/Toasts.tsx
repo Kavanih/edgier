@@ -17,6 +17,8 @@ export function Toasts() {
   const [items, setItems] = useState<Toast[]>([]);
   useEffect(() => {
     const on = (t: Toast) => {
+      // A busy toast with no text is the "done" signal: drop every busy toast.
+      if (t.kind === "busy" && !t.text) { setItems((xs) => xs.filter((x) => x.kind !== "busy")); return; }
       setItems((xs) => [...xs.filter((x) => x.kind !== "busy" || t.kind !== "busy"), t]);
       if (t.kind !== "busy") setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== t.id)), t.kind === "error" ? 9000 : 4500);
     };
@@ -36,7 +38,7 @@ export function Toasts() {
   );
 }
 
-/** Clears any busy toast (e.g. when an action finishes). */
+/** Clears any busy toast — call when the action it announced has finished. */
 export function clearBusy() {
-  listeners.forEach((l) => l({ id: -1, kind: "info", text: "" }));
+  listeners.forEach((l) => l({ id: -1, kind: "busy", text: "" }));
 }
