@@ -7,6 +7,8 @@ node_modules/
 # generated
 contracts/artifacts/
 contracts/cache/
+contracts/docs/
+
 contracts/typechain-types/
 frontend/dist/
 

@@ -90,7 +90,7 @@ b { font-weight: 600; }
 .chip-btn { cursor: pointer; color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); transition: transform .08s; }
 .chip-btn:hover { transform: translateY(-1px); } .chip-btn.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .incident + .incident { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
-.badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid; }
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid; white-space: nowrap; line-height: 1.4; }
 .badge-ok { color: var(--ok-ink); background: var(--ok-soft); border-color: #b7e4cf; }
 .badge-active { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
 .badge-muted, .badge-none { color: var(--muted); background: var(--surface-2); border-color: var(--line-2); }
@@ -188,7 +188,8 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .table tr.open td { background: var(--accent-soft); }
 .table .num { text-align: right; }
 .table-compact { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.table-compact td { white-space: normal; }
+.table-compact td { white-space: normal; vertical-align: middle; }
+.table-compact td.mono { background: none; color: var(--muted); }
 .ev { font-family: var(--mono); font-weight: 600; font-size: 12px; }
 .ev-PolicyClaimed, .ev-ClaimPaid { color: var(--ok-ink); }
 .ev-ClaimSubmitted { color: var(--accent-ink); }
