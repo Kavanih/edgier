@@ -36,35 +36,40 @@ const PROOF_BUILDER_URL = process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-t
 // Source-chain RPCs, for turning block numbers into dates and back.
 const SOURCE_RPC: Record<number, string[]> = {
   1: [process.env.SEPOLIA_RPC_URL, "https://ethereum-sepolia-rpc.publicnode.com", "https://sepolia.gateway.tenderly.co"].filter(Boolean) as string[],
-  3: [process.env.MAINNET_RPC_URL, "https://ethereum-rpc.publicnode.com", "https://mainnet.gateway.tenderly.co", "https://eth.drpc.org"].filter(Boolean) as string[],
+  3: [process.env.MAINNET_RPC_URL, "https://ethereum-rpc.publicnode.com", "https://eth.drpc.org", "https://cloudflare-eth.com", "https://eth.llamarpc.com", "https://mainnet.gateway.tenderly.co"].filter(Boolean) as string[],
 };
 class NotMined extends Error {}
 const blockTimeCache = new Map<string, number>();
+class NoData extends Error {}
+async function blockFromRpc(url: string, block: number | "latest"): Promise<{ number: number; timestamp: number }> {
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [block === "latest" ? "latest" : "0x" + block.toString(16), false] }),
+    signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const j = (await res.json()) as { result?: { number: string; timestamp: string } | null; error?: unknown };
+  // A well-formed "null" from a healthy node means the block does not exist (yet).
+  if (j.result === null) throw new NoData(`${url}: no data for block ${block}`);
+  if (!j.result) throw new Error(`${url}: ${JSON.stringify(j.error ?? "empty")}`.slice(0, 100));
+  return { number: parseInt(j.result.number, 16), timestamp: parseInt(j.result.timestamp, 16) };
+}
 async function blockTimestamp(chainKey: number, block: number | "latest"): Promise<{ number: number; timestamp: number }> {
   const key = `${chainKey}:${block}`;
   if (block !== "latest" && blockTimeCache.has(key)) return { number: block, timestamp: blockTimeCache.get(key)! };
   const urls = SOURCE_RPC[chainKey]; if (!urls?.length) throw new Error(`no RPC for chainKey ${chainKey}`);
-  let lastErr = "no RPC answered";
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: [block === "latest" ? "latest" : "0x" + block.toString(16), false] }),
-        signal: AbortSignal.timeout(8000) });
-      if (!res.ok) { lastErr = `${url}: HTTP ${res.status}`; continue; }
-      const j = (await res.json()) as { result?: { number: string; timestamp: string } | null; error?: unknown };
-      if (j.result === null && block !== "latest") {
-        // A well-formed "null" from a healthy node means the block does not exist yet.
-        const head = await blockTimestamp(chainKey, "latest");
-        if (typeof block === "number" && block > head.number) throw new NotMined(`block ${block} is above the head ${head.number}`);
-        lastErr = `${url}: no data for block ${block}`; continue;
-      }
-      if (!j.result) { lastErr = `${url}: ${JSON.stringify(j.error ?? "empty")}`.slice(0, 100); continue; }
-      const out = { number: parseInt(j.result.number, 16), timestamp: parseInt(j.result.timestamp, 16) };
-      if (block !== "latest") blockTimeCache.set(key, out.timestamp);
-      return out;
-    } catch (e) { if (e instanceof NotMined) throw e; lastErr = `${url}: ${(e as Error).message}`.slice(0, 100); }
+  // Race every RPC; the first good answer wins. Public nodes stall for seconds at a time,
+  // and trying them one after another turned a 300 ms lookup into a 20 s one.
+  try {
+    const out = await Promise.any(urls.map((u) => blockFromRpc(u, block)));
+    if (block !== "latest") blockTimeCache.set(key, out.timestamp);
+    return out;
+  } catch (e) {
+    const errors = (e as AggregateError).errors ?? [e];
+    if (typeof block === "number" && errors.some((x) => x instanceof NoData)) {
+      const head = await blockTimestamp(chainKey, "latest");
+      if (block > head.number) throw new NotMined(`block ${block} is above the head ${head.number}`);
+    }
+    throw new Error(`block ${block} lookup failed (${errors.map((x) => (x as Error).message).join("; ").slice(0, 200)})`);
   }
-  throw new Error(`block ${block} lookup failed (${lastErr})`);
 }
 
 /**
