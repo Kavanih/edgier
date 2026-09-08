@@ -9,6 +9,7 @@ House rules on this deployment: cover per contract ≤ ~29,000 mUSD (10 % of the
 thresholds are in the token's own units — get the **decimals** right (USDT/USDC = 6, WBTC = 8, most others 18).
 Every 🔎 card below was verified today against the mainnet receipt: the transaction succeeded and contains a single `Transfer`
 **from the insured address** at least as large as the threshold. Video script per page: `contracts/docs/DEMO.md`.
+The second half of this file has incidents settled by an **admin upgrade**, an **emergency pause**, a **custom event** or a **direct function call** — no token threshold at all.
 KuCoin, Balancer, Cream and Wintermute were additionally run through the live BlockProver precompile today: `verify` returned true for all four.
 The **first** proof fetch for a block the prover has not seen can take a minute or two (KuCoin's 2020 block did); the retry is seconds. Fetch each card's proof once off camera.
 
@@ -347,11 +348,171 @@ the attacker's is not confirmed. Fine for a mechanics test, not for a headline.
 
 ---
 
+# Perils that are not a token outflow
+
+Same app, same flow — only the peril rows change. On **Buy cover**, untick the outflow row and tick *admin upgrade* or *emergency pause*,
+or type the event / function signature into the *custom event* / *function call* box. Every transaction below was verified today on the live
+BlockProver precompile (`verify` = true) and decoded: the insured contract emitted the event, or was called directly with that selector.
+
+A policy pays once. Where a card lists several transactions, either buy one bundle and settle it with whichever transaction you want to film,
+or buy one single-peril policy per transaction and settle each — the claim reports which peril index fired.
+
+## 🔎 Ronin Bridge v2 · 2024-08-06 — the upgrade, the drain, the pause: three perils, three transactions, ninety minutes
+
+A governance upgrade shipped with the vote threshold set to zero (08:48 UTC). An MEV bot noticed and pulled ~$12M (10:11). Ronin paused the
+bridge (10:15). One 500-block window covers all three, and each is a different peril. The upgrade *is* the loss event — you can insure the cause,
+not just the symptom.
+
+| Buy cover | |
+|---|---|
+| Assistant prompt | *Insure the Ronin bridge 0x64192819Ac13Ef72bF6b5AE239AC672B43a9AF08 on Ethereum mainnet against a bad admin upgrade. Pay if the proxy is upgraded, if the bridge is paused, if its withdrawal thresholds are changed (HighTierThresholdsUpdated), or if more than 1 million USDC leaves it. 500-block window, 10,000 mUSD.* |
+| Insured contract | `0x64192819Ac13Ef72bF6b5AE239AC672B43a9AF08` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | ☑ admin upgrade · ☑ emergency pause · custom event `HighTierThresholdsUpdated(address[],uint256[])` · large outflow USDC `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` · `1000000` · **6** |
+| Cover · mUSD | `10000` |
+| Window · block | `20468400` → `20468900` (Aug 6, 2024 08:40 → 10:22 UTC) |
+
+| Claim | |
+|---|---|
+| The upgrade | `0x855dd3b1194e3b889f4667b6a0996220e350e034d35d3eab29b4f23bc205767e` (block 20,468,438) — bridge emits `Upgraded` → `ADMIN_UPGRADE` fires; it also emits `HighTierThresholdsUpdated` → the custom event fires |
+| The drain | `0xbce5b8548db486c561948e8a177c8ccaa72810f972cee3909ea50af015a60ad8` (block 20,468,848) — 1,998,046 USDC out → `LARGE_OUTFLOW` fires |
+| The pause | `0x90a1a9011dc2c246631da893f5f9f17ea4e27dbd9a334052a1d53359dfe090c9` (block 20,468,866) — bridge emits `Paused` → `EMERGENCY_PAUSE` fires |
+
+## 🔎 Nomad Replica · 2022-04-21 — the upgrade that broke the bridge, three months before the hack
+
+Nomad's August 2022 loss (~$190M, policy #5) was caused by an initialisation in April that marked the zero root as trusted. That April
+transaction is a direct `transferOwnership(address)` call on the Replica, and the Replica emits `OwnershipTransferred`. Two perils, one transaction,
+no token moves at all.
+
+| Buy cover | |
+|---|---|
+| Assistant prompt | *Insure the Nomad Replica contract 0x5D94309E5a0090b165FA4181519701637B6DAEBA on Ethereum mainnet against an admin change. Pay if ownership is transferred or the implementation is upgraded, and if anyone calls transferOwnership(address) on it directly. 100-block window, 5,000 mUSD.* |
+| Insured contract | `0x5D94309E5a0090b165FA4181519701637B6DAEBA` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | ☑ admin upgrade · function call `transferOwnership(address)` (selector `0xf2fde38b`) — no outflow row |
+| Cover · mUSD | `5000` |
+| Window · block | `14629767` → `14629867` (loss block 14,629,817 — Apr 21, 2022 18:11 UTC) |
+
+| Claim | |
+|---|---|
+| Loss tx | `0x9290af9d31562f4ed80c8f13a6607805282b050edfaa5cc033e855073972d3e8` |
+| Expect | Replica emits `OwnershipTransferred` → `ADMIN_UPGRADE` fires (peril 0); the transaction's `to` is the Replica and its selector is `0xf2fde38b` → `CALL_SELECTOR` would fire too (peril 1) |
+
+## 🔎 Poly Network · 2021-08-10 — one pause transaction, two contracts, plus the hack as a direct call
+
+Twenty-eight minutes after the $611M exploit, Poly paused both the manager and the data contract in a single transaction — both emit `Paused`.
+Two policies, one proof, `submitClaimBatch`. And the exploit transaction itself (already proven for policy #4) was a direct call to the manager's
+`verifyHeaderAndExecuteTx` — a `CALL_SELECTOR` policy on the manager settles with the same proof that settled the SHIB outflow on the LockProxy.
+
+| Buy cover — policy A | |
+|---|---|
+| Assistant prompt | *Insure Poly Network's EthCrossChainManager 0x838bf9E95CB12Dd76a54C9f9D2E3082EAF928270 on Ethereum mainnet. Pay if it is paused, or if anyone calls verifyHeaderAndExecuteTx(bytes,bytes,bytes,bytes,bytes) on it directly. 200-block window, 5,000 mUSD.* |
+| Insured contract | `0x838bf9E95CB12Dd76a54C9f9D2E3082EAF928270` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | ☑ emergency pause · function call `verifyHeaderAndExecuteTx(bytes,bytes,bytes,bytes,bytes)` (selector `0xd450e04c`) — no outflow row |
+| Cover · mUSD | `5000` |
+| Window · block | `12996700` → `12996900` (hack block 12,996,730 at 10:03 UTC, pause block 12,996,855 at 10:31 UTC, Aug 10, 2021) |
+
+| Buy cover — policy B | |
+|---|---|
+| Insured contract | `0xcF2afe102057bA5c16f899271045A0A37fCb10f2` (EthCrossChainData) · ☑ emergency pause only · same window and cover |
+
+| Claim | |
+|---|---|
+| The pause (settles A and B) | `0xa21b6e0c615b22fc927db0e4547102b334d88b4ecc01e963c9fe289a0db1142e` — both contracts emit `Paused` → `EMERGENCY_PAUSE` fires on each |
+| The hack (settles A via the function call) | `0xe05dcda4f1b779989b0aa2bd3fa262d4e6e13343831cb337c2c5beb2266138f5` — `to` is the manager, selector `0xd450e04c` → `CALL_SELECTOR` fires |
+
+## 🔎 Penpie · 2024-09-03 — a custom event on the drain, then the pause
+
+The reentrancy drain (policy card above) makes PendleStaking emit `NewMarketWithdraw` four times. Seventy-six minutes later the team paused it.
+Insure both: the event that *is* the loss, and the pause that follows.
+
+| Buy cover | |
+|---|---|
+| Assistant prompt | *Insure Penpie's PendleStaking 0x6E799758CEE75DAe3d84e09D40dc416eCf713652 on Ethereum mainnet. Pay if it is paused, or if it emits NewMarketWithdraw(address,address,uint256,address,uint256). 500-block window, 5,000 mUSD.* |
+| Insured contract | `0x6E799758CEE75DAe3d84e09D40dc416eCf713652` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | ☑ emergency pause · custom event `NewMarketWithdraw(address,address,uint256,address,uint256)` — no outflow row |
+| Cover · mUSD | `5000` |
+| Window · block | `20671770` → `20672270` (drain 20,671,820 at 18:23 UTC, pause 20,672,196 at 19:38 UTC, Sep 3, 2024) |
+
+| Claim | |
+|---|---|
+| The drain | `0x56e09abb35ff12271fdb38ff8a23e4d4a7396844426a94c4d3af2e8b7a0a2813` — `NewMarketWithdraw` emitted by the target → `CUSTOM_EVENT` fires |
+| The pause | `0x85b241607ec9ca812ad764a92df01397a940e104c323d509be5e78ee70ec541f` — `Paused` → `EMERGENCY_PAUSE` fires |
+
+## 🔎 Team Finance · 2022-10-27 — `pause()` called directly, and the migration event that was the exploit
+
+The exploit went through the lock contract's liquidity migration, so the loss transaction emits `LiquidityMigrated`. An hour later the owner
+called `pause()` on the contract directly — one transaction that is both a direct function call and an `EMERGENCY_PAUSE`.
+
+| Buy cover | |
+|---|---|
+| Assistant prompt | *Insure the Team Finance token-lock contract 0xE2fE530C047f2d85298b07D9333C05737f1435fB on Ethereum mainnet. Pay if it emits LiquidityMigrated(address,uint256,uint256,uint256), if it is paused, or if anyone calls pause() on it directly. 500-block window, 5,000 mUSD.* |
+| Insured contract | `0xE2fE530C047f2d85298b07D9333C05737f1435fB` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | ☑ emergency pause · custom event `LiquidityMigrated(address,uint256,uint256,uint256)` · function call `pause()` (selector `0x8456cb59`) — no outflow row |
+| Cover · mUSD | `5000` |
+| Window · block | `15838175` → `15838600` (drain 15,838,225 at 08:29 UTC, pause 15,838,543 at 09:32 UTC, Oct 27, 2022) |
+
+| Claim | |
+|---|---|
+| The drain | `0xb2e3ea72d353da43a2ac9a8f1670fd16463ab370e563b9b5b26119b2601277ce` — `LiquidityMigrated` ×4 from the target → `CUSTOM_EVENT` fires |
+| The pause | `0x1f41fe380f279eea00bd54394eea920f16bec575218f080c4ee7d42f953e1f3e` — `Paused` → `EMERGENCY_PAUSE` fires; `to` is the target and selector `0x8456cb59` → `CALL_SELECTOR` fires |
+
+## 🔎 Bybit Safe · 2025-02-21 — the malicious `execTransaction`, as a function call and as an event
+
+The $1.46B loss began with one signed `execTransaction` on the cold-wallet Safe, whose calldata swapped the Safe's implementation. The Safe
+emits `ExecutionSuccess`. No token leaves in that transaction; the ERC-20 legs (card above) come thirteen blocks later.
+
+| Buy cover | |
+|---|---|
+| Assistant prompt | *Insure our Safe multisig 0x1Db92e2EeBC8E0c075a02BeA49a2935BcD2dFCF4 on Ethereum mainnet. Pay if anyone calls execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes) on it directly, or if it emits ExecutionSuccess(bytes32,uint256). 100-block window, 10,000 mUSD.* |
+| Insured contract | `0x1Db92e2EeBC8E0c075a02BeA49a2935BcD2dFCF4` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | function call `execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)` (selector `0x6a761202`) · custom event `ExecutionSuccess(bytes32,uint256)` — no outflow row |
+| Cover · mUSD | `10000` |
+| Window · block | `21895188` → `21895301` (loss block 21,895,238 — Feb 21, 2025 14:13 UTC; the stETH outflow at 21,895,251 is inside the same window) |
+
+| Claim | |
+|---|---|
+| Loss tx | `0x46deef0f52e3a983b67abf4714448a41dd7ffd6d32d32da69d62081c68ad7882` |
+| Expect | `to` is the Safe, selector `0x6a761202` → `CALL_SELECTOR` fires (peril 0); `ExecutionSuccess` emitted by the Safe → `CUSTOM_EVENT` would fire (peril 1) |
+
+## 🔎 Orbit Bridge · 2024-01-01 — the same loss, insured as a function call and as an event
+
+You already settled this one on a USDT outflow. The same transaction is a direct `withdraw(...)` call on the vault, and the vault emits `Withdraw`.
+Buy it again with those two perils and settle it with the same proof — the on-camera line is "three different policies, one transaction".
+
+| Buy cover | |
+|---|---|
+| Assistant prompt | *Insure the Orbit Bridge ETH vault 0x1Bf68A9d1EaEe7826b3593C20a0ca93293cb489a on Ethereum mainnet. Pay if anyone calls its withdraw function directly, or if it emits Withdraw(string,bytes,bytes,bytes,bytes32[],uint256[],bytes). 100-block window, 5,000 mUSD.* |
+| Insured contract | `0x1Bf68A9d1EaEe7826b3593C20a0ca93293cb489a` |
+| Source chain | Ethereum Mainnet (chainKey 3) |
+| Perils | function call `0x2ac5ab1b` (that is `withdraw(address,string,bytes,address,address,bytes32[],uint256[],bytes,uint8[],bytes32[],bytes32[])` — paste the selector, it is shorter) · custom event `Withdraw(string,bytes,bytes,bytes,bytes32[],uint256[],bytes)` — no outflow row |
+| Cover · mUSD | `5000` |
+| Window · block | `18908073` → `18908173` (loss block 18,908,123 — Jan 1, 2024) |
+
+| Claim | |
+|---|---|
+| Loss tx | `0xd8ca42941a0a2c25669267ad8d61f7f9f4118252cb502316602fe16624b80ac8` |
+| Expect | `to` is the vault, selector `0x2ac5ab1b` → `CALL_SELECTOR` fires (peril 0); `Withdraw` emitted by the vault → `CUSTOM_EVENT` (peril 1) |
+
+Also usable, if you want more of these: **Cream crUSDC** emits `Borrow(address,uint256,uint256,uint256)` in its loss transaction (custom event, no threshold);
+**Wintermute**'s loss transaction is a direct call to the vault with selector `0x178979ae` (function call by raw selector).
+
+---
+
 ## Test types worth recording, and which card to use
 
 | Test | Card | What to show |
 |---|---|---|
 | Plain outflow, one token | KuCoin, Curve CRV/ETH, Penpie | the basic flow, start to finish |
+| **Admin upgrade**, no token | Ronin v2 (the upgrade tx), Nomad Replica | `Upgraded` / `OwnershipTransferred` emitted by the insured contract |
+| **Emergency pause**, no token | Ronin v2, Poly Network (two contracts), Penpie, Team Finance | `Paused` emitted by the insured contract |
+| **Custom event** | Penpie `NewMarketWithdraw`, Team Finance `LiquidityMigrated`, Bybit `ExecutionSuccess`, Orbit `Withdraw`, Ronin v2 `HighTierThresholdsUpdated` | any named event, matched by its topic hash |
+| **Function call** (direct call to the insured contract) | Poly `verifyHeaderAndExecuteTx`, Nomad `transferOwnership`, Team Finance `pause()`, Bybit `execTransaction`, Orbit `0x2ac5ab1b` | the transaction's `to` is the contract and the selector matches |
+| Three transactions, three perils, one window | Ronin v2 | upgrade → drain → pause, ninety minutes |
 | Bundle: five outflow rows, any one settles | Wintermute | a policy with 5 perils; the claim reports which peril index fired |
 | Three tokens in one transaction | Balancer, Team Finance | one proof, first matching row settles |
 | One transaction settles three contracts | Cream (crUSDC, crUSDT, crFEI) | three policies → `submitClaimBatch`, one continuity proof |

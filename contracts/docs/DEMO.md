@@ -83,6 +83,7 @@ million USDC. Trigger met."
 proof is the permission."
 
 - Optional 10 s: open policy #1 (Ronin) and show the *loss* link on Etherscan next to the *paid* link on Blockscout.
+- Optional 20 s, the strongest beat if you have time: the Ronin v2 card from `list.md` — a policy on *admin upgrade*, settled by the upgrade transaction itself. "No token moved. The contract paid because the proxy was upgraded. We insured the cause, not the symptom."
 
 ## 5 · Underwrite — 15 s
 
