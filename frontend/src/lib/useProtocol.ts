@@ -87,6 +87,8 @@ export interface Snapshot {
   you: Holding | null;
   attestedHeight: bigint;
   events: LogLine[];
+  /** False until the first catch-up from the deploy block has completed without error. */
+  eventsReady: boolean;
 }
 
 const EVENT_SOURCES: { name: string; contract: () => Contract; events: Set<string> }[] = [
@@ -112,44 +114,59 @@ function describe(name: string, args: readonly unknown[]): string {
  * what we already have. A failed query is reported, not swallowed.
  */
 const CHUNK = 4_000;
+const CACHE_KEY = `edgier.events.${D.addresses.ClaimVerifier}`;
 const eventState: { cursor: number; lines: LogLine[]; error: string | null } = {
   cursor: ((D as { deployBlock?: number }).deployBlock ?? 1) - 1,
   lines: [],
   error: null,
 };
+// Returning visitor: start from where the last session left off, so the log is
+// on screen at once and only the new blocks are queried.
+try {
+  const saved = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as { cursor: number; lines: LogLine[] } | null;
+  if (saved && Number.isInteger(saved.cursor) && Array.isArray(saved.lines) && saved.cursor >= eventState.cursor) {
+    eventState.cursor = saved.cursor; eventState.lines = saved.lines;
+  }
+} catch { /* no storage, or a stale shape — cold start is fine */ }
+function persistEvents() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ cursor: eventState.cursor, lines: eventState.lines })); } catch { /* quota or private mode */ }
+}
 
 async function loadEvents(): Promise<{ lines: LogLine[]; error: string | null }> {
   const head = await provider.getBlockNumber();
-  let from = eventState.cursor + 1;
   eventState.error = null;
-  while (from <= head) {
-    const to = Math.min(from + CHUNK - 1, head);
-    for (const src of EVENT_SOURCES) {
-      const c = src.contract();
-      let logs;
-      try {
-        logs = await c.queryFilter("*", from, to);
-      } catch (e) {
-        eventState.error = `event query ${from}–${to} failed: ${(e as Error).message.slice(0, 80)}`;
-        return { lines: eventState.lines, error: eventState.error };
-      }
-      for (const l of logs) {
-        if (!("eventName" in l) || !src.events.has(l.eventName)) continue;
-        const key = `${l.transactionHash}-${l.index}`;
-        if (eventState.lines.some((x) => x.key === key)) continue;
-        const args = l.args as unknown as readonly unknown[];
-        eventState.lines.push({
-          key, block: l.blockNumber, source: src.name, name: l.eventName,
-          detail: describe(l.eventName, args), txHash: l.transactionHash,
-          args: args.map((x) => (typeof x === "bigint" ? x.toString() : String(x))),
-        });
-      }
+  if (eventState.cursor >= head) return { lines: eventState.lines, error: null };
+  // All chunks × all contracts at once. The first load after deploy is ~5 chunks,
+  // so one round-trip wave instead of fifteen sequential queries.
+  const ranges: [number, number][] = [];
+  for (let from = eventState.cursor + 1; from <= head; from += CHUNK) ranges.push([from, Math.min(from + CHUNK - 1, head)]);
+  const results = await Promise.all(ranges.flatMap(([from, to]) => EVENT_SOURCES.map(async (src) => {
+    try { return { src, from, to, logs: await src.contract().queryFilter("*", from, to) }; }
+    catch (e) { return { src, from, to, logs: null, err: (e as Error).message.slice(0, 80) }; }
+  })));
+  // Advance the cursor only through the contiguous prefix of ranges that fully succeeded.
+  let cursor = eventState.cursor;
+  for (const [from, to] of ranges) {
+    const mine = results.filter((r) => r.from === from);
+    const failed = mine.find((r) => r.logs === null);
+    if (failed) { eventState.error = `event query ${from}–${to} failed: ${failed.err}`; break; }
+    for (const r of mine) for (const l of r.logs!) {
+      if (!("eventName" in l) || !r.src.events.has(l.eventName)) continue;
+      const key = `${l.transactionHash}-${l.index}`;
+      if (eventState.lines.some((x) => x.key === key)) continue;
+      const args = l.args as unknown as readonly unknown[];
+      eventState.lines.push({
+        key, block: l.blockNumber, source: r.src.name, name: l.eventName,
+        detail: describe(l.eventName, args), txHash: l.transactionHash,
+        args: args.map((x) => (typeof x === "bigint" ? x.toString() : String(x))),
+      });
     }
-    eventState.cursor = to;
-    from = to + 1;
+    cursor = to;
   }
+  eventState.cursor = cursor;
   eventState.lines.sort((x, y) => y.block - x.block);
-  return { lines: eventState.lines, error: null };
+  persistEvents();
+  return { lines: eventState.lines, error: eventState.error };
 }
 
 async function holdingOf(addr: string): Promise<Holding> {
@@ -193,6 +210,7 @@ async function loadSnapshot(actor: Actor | null): Promise<Snapshot> {
     you: actor ? await holdingOf(actor.address) : null,
     attestedHeight: attested.height,
     events: [],
+    eventsReady: false,
   };
 }
 
@@ -221,10 +239,10 @@ export function useProtocol() {
       // Two phases: the pool and policies render immediately; the event log
       // fills in when the (slower) log query lands, keeping the last one until then.
       const core = await loadSnapshot(actor);
-      setSnap((prev) => ({ ...core, events: prev?.events ?? [] }));
+      setSnap((prev) => ({ ...core, events: prev?.events ?? eventState.lines, eventsReady: prev?.eventsReady ?? false }));
       setConnError(null);
       const ev = await loadEvents();
-      setSnap((prev) => (prev ? { ...prev, events: ev.lines } : prev));
+      setSnap((prev) => (prev ? { ...prev, events: ev.lines, eventsReady: prev.eventsReady || !ev.error } : prev));
       if (ev.error) toast("info", ev.error);
     } catch (e) {
       setConnError(

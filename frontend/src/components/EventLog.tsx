@@ -5,7 +5,9 @@ export function EventLog({ snap }: { snap: Snapshot }) {
     <section className="card">
       <div className="card-h"><h2>Settlement log</h2><span className="muted">{snap.events.length} events · chain-sourced</span></div>
       <p className="muted"><code>ClaimSubmitted</code> is emitted by the ClaimVerifier only after the BlockProver has returned true.</p>
-      {snap.events.length === 0 && <p className="muted">Nothing has happened yet.</p>}
+      {snap.events.length === 0 && (snap.eventsReady
+        ? <p className="muted">Nothing has happened yet.</p>
+        : <p className="muted"><span className="spinner" /> Reading events from Creditcoin, from the deploy block forward…</p>)}
       <div className="table-wrap">
         <table className="table">
           <thead><tr><th>Block</th><th>Event</th><th>Contract</th><th>Args</th></tr></thead>

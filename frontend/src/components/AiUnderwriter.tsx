@@ -68,13 +68,15 @@ export function AiUnderwriter({
         <div className="ai-out">
           <div className="ai-row">
             <span className="k">perils</span>
-            <span className="v">{(Array.isArray(draft.kinds) ? draft.kinds : [draft.kind ?? 0]).map((k) => KINDS[Number(k)]?.label ?? "?").join(", ")}</span>
+            <span className="v">
+              {(Array.isArray(draft.perils) && draft.perils.length
+                ? draft.perils.map((p) => `${KINDS[Number(p.kind)]?.label ?? "?"}${Number(p.kind) === 2 && p.threshold ? ` ≥ ${p.threshold} ${p.token ?? ""}` : ""}${(Number(p.kind) === 3 || Number(p.kind) === 4) && p.signature ? ` ${p.signature}` : ""}`)
+                : (Array.isArray(draft.kinds) ? draft.kinds : [draft.kind ?? 0]).map((k) => `${KINDS[Number(k)]?.label ?? "?"}${Number(k) === 2 && draft.threshold ? ` ≥ ${draft.threshold}` : ""}`)
+              ).join(" · ")}
+            </span>
           </div>
           <div className="ai-row"><span className="k">cover</span><span className="v">{draft.coverAmount} mUSD</span></div>
           <div className="ai-row"><span className="k">window</span><span className="v">{draft.windowBlocks} blocks</span></div>
-          {Number(draft.kind) === 2 && (
-            <div className="ai-row"><span className="k">threshold</span><span className="v">{draft.threshold}</span></div>
-          )}
           <p className="ai-text">{draft.rationale}</p>
           {!!draft.caveats?.length && (
             <ul className="ai-caveats">

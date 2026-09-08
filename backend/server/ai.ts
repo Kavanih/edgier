@@ -29,6 +29,8 @@ const HOST = process.env.AI_HOST ?? "127.0.0.1";
 const KEY = process.env.OPENROUTER_API_KEY;
 /** Leave headroom under OpenRouter's 1,000/day free allowance. */
 const DAILY_CAP = Number(process.env.OPENROUTER_DAILY_CAP ?? 900);
+/** Per-model cap; a slow free model is rotated past, not waited for. */
+const REQUEST_TIMEOUT_MS = 30_000;
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PROOF_BUILDER_URL = process.env.PROOF_BUILDER_URL ?? "https://prover.cc3-testnet.creditcoin.network";
@@ -78,13 +80,15 @@ async function blockTimestamp(chainKey: number, block: number | "latest"): Promi
  * glm were 429-limited). Anything free not listed here is a fallback.
  */
 const PREFERRED = [
+  // 2026-09-08 benchmark, JSON draft with reasoning disabled: ling-sante 1.5 s, dots 1.8 s,
+  // gemma-31b 2.5 s, laguna-xs 5 s, nemotron-lightning 11 s. Everything else was empty,
+  // rate-limited or timed out.
+  "inclusionai/ling-3.0-flash-sante:free",
   "dots-studio/dots-3-note-preview:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "poolside/laguna-s-2.1:free",
-  "minimax/minimax-m2.7:free",
   "google/gemma-4-31b-it:free",
-  "z-ai/glm-5.2:free",
-  "minimax/minimax-m3:free",
+  "poolside/laguna-xs-2.1:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "cohere/north-mini-code:free",
 ];
 /** Free, but not chat models — or ones that returned empty replies under test. */
 const EXCLUDE = new Set([
@@ -92,6 +96,10 @@ const EXCLUDE = new Set([
   "thinkingmachines/inkling-small:free",
   "thinkingmachines/inkling:free",
   "liquid/lfm-2.5-2.6b:free",
+  // Empty replies or >30 s with reasoning disabled (2026-09-08).
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
 ]);
 
 // --- free-model discovery -------------------------------------------------
@@ -136,7 +144,7 @@ function tick() {
 
 // --- completion with model rotation ---------------------------------------
 
-async function complete(system: string, user: string, maxTokens = 1000): Promise<{ text: string; model: string }> {
+async function complete(system: string, user: string, maxTokens = 1000, wantJson = false): Promise<{ text: string; model: string }> {
   if (!KEY) throw new Error("OPENROUTER_API_KEY is not set — add it to .env");
   tick();
   if (usage.calls >= DAILY_CAP) throw new Error(`daily cap of ${DAILY_CAP} calls reached; resets at 00:00 UTC`);
@@ -150,23 +158,34 @@ async function complete(system: string, user: string, maxTokens = 1000): Promise
     if (!model.endsWith(":free")) continue;
 
     usage.calls++;
-    const res = await fetch(CHAT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${KEY}`,
-        "content-type": "application/json",
-        "X-Title": "Edgier",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_tokens: maxTokens,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${KEY}`,
+          "content-type": "application/json",
+          "X-Title": "Edgier",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: maxTokens,
+          // Every free model today is a "reasoning" model. Left on, one thought for two
+          // minutes and returned its thinking as the answer. Off, the same model answers
+          // in under two seconds.
+          reasoning: { enabled: false, exclude: true },
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (e) {
+      lastErr = `${model}: ${(e as Error).name === "TimeoutError" ? `no answer in ${REQUEST_TIMEOUT_MS / 1000}s` : (e as Error).message}`;
+      continue;
+    }
 
     // Free tiers rate-limit and go away without notice; rotate rather than fail.
     if ([404, 408, 429, 500, 502, 503].includes(res.status)) {
@@ -178,6 +197,7 @@ async function complete(system: string, user: string, maxTokens = 1000): Promise
     const j = (await res.json()) as { model?: string; choices?: { message?: { content?: string } }[] };
     const text = j.choices?.[0]?.message?.content ?? "";
     if (!text.trim()) { lastErr = `${model}: empty reply`; continue; }
+    if (wantJson && "raw" in (extractJson(text) as object)) { lastErr = `${model}: no JSON in reply`; continue; }
     return { text, model: j.model ?? model };
   }
   throw new Error(`all free models refused (${lastErr})`);
@@ -204,17 +224,21 @@ Answer with a single JSON object and nothing else.`;
 const DRAFT_SYSTEM = `${PRINCIPLE}
 
 Task: turn a protocol owner's plain-English description of what they want covered into a
-policy draft. Edgier can ONLY insure precisely-defined on-chain events that appear in
-a transaction's event logs. The available trigger kinds are:
+policy draft. Edgier insures ONE contract (or wallet) against a BUNDLE of perils; the policy
+pays if ANY peril fires. Each peril is a precisely-defined event in a transaction's logs:
   0 ADMIN_UPGRADE   — EIP-1967 Upgraded(address) or OwnershipTransferred(address,address) emitted by the insured contract
   1 EMERGENCY_PAUSE — OpenZeppelin Paused(address) emitted by the insured contract
-  2 LARGE_OUTFLOW   — ERC-20 Transfer(address,address,uint256) with from == insured contract and value >= threshold
-It CANNOT insure "any exploit", TVL drops, price moves, or native ETH movements. If the
-request cannot be expressed as one of these, say so in caveats and pick the closest.
+  2 LARGE_OUTFLOW   — ERC-20 Transfer(address,address,uint256) with from == insured contract and value >= threshold,
+                      for ONE token per peril; several tokens = several LARGE_OUTFLOW perils, each with its own threshold
+  3 CUSTOM_EVENT    — any named event emitted by the insured contract, e.g. Withdrawal(address,uint256)
+  4 CALL_SELECTOR   — a direct call to a named function on the insured contract, e.g. withdrawAll()
+It CANNOT insure "any exploit", TVL drops, price moves, or native ETH movements. If part of the
+request cannot be expressed, say so in caveats and draft the rest.
 
-Return: {"kind": 0|1|2, "threshold": "<token units as a decimal string, 0 if not LARGE_OUTFLOW>",
-"coverAmount": "<decimal string in mUSD>", "windowBlocks": <integer, ~7200 per day on Ethereum>,
-"rationale": "<2-3 sentences>", "caveats": ["<what this policy will NOT catch>", ...]}`;
+Return ONLY this JSON, no prose before or after:
+{"perils": [{"kind": 0|1|2|3|4, "token": "<token symbol or address, LARGE_OUTFLOW only>", "threshold": "<token units as a decimal string, LARGE_OUTFLOW only>", "signature": "<Event(types) or function(types), kinds 3 and 4 only>"}],
+ "coverAmount": "<decimal string in mUSD>", "windowBlocks": <integer, ~7200 per day on Ethereum>,
+ "rationale": "<2-3 sentences>", "caveats": ["<what this policy will NOT catch>", ...]}`;
 
 const ANALYSE_SYSTEM = `${PRINCIPLE}
 

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { resolveToken } from "../lib/tokens";
 import { parseEther, parseUnits, isAddress, id as keccakId } from "ethers";
 import { contractsFor, D, provider, read, type Actor } from "../lib/chain";
 import { amount, bpsPct, pctOfWad } from "../lib/format";
 import { Kind, KINDS, ZERO32, type Peril } from "../lib/triggers";
 import { INCIDENTS, perilOf } from "../lib/incidents";
 import type { Snapshot } from "../lib/useProtocol";
-import type { PolicyDraft } from "../lib/ai";
+import type { PolicyDraft, DraftPeril } from "../lib/ai";
 import { AiUnderwriter } from "./AiUnderwriter";
 import { Icon } from "./Icons";
 import { blockForDate, blockLabel, toLocalInput } from "../lib/source";
@@ -102,13 +103,24 @@ export function BuyCover({
 
   /** Apply an AI draft to the form — after validating it. A model can return anything. */
   function applyDraft(d: PolicyDraft) {
-    const kinds = (Array.isArray(d.kinds) ? d.kinds : [d.kind]).map(Number).filter((k) => Number.isInteger(k) && k >= 0 && k <= 3);
-    if (kinds.length) { setUpgrade(kinds.includes(0)); setPause(kinds.includes(1)); }
-    void 4; // CALL_SELECTOR needs a function name the model does not have; left to the user
     const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+    // Current shape: a bundle. Legacy shape: kind/kinds + one threshold.
+    const perilsIn: DraftPeril[] = Array.isArray(d.perils) && d.perils.length
+      ? d.perils
+      : (Array.isArray(d.kinds) ? d.kinds : [d.kind]).filter((k) => k !== undefined).map((k) => ({ kind: Number(k), threshold: d.threshold }));
+    const valid = perilsIn.filter((x) => Number.isInteger(Number(x.kind)) && Number(x.kind) >= 0 && Number(x.kind) <= 4);
+    if (valid.length) {
+      setUpgrade(valid.some((x) => Number(x.kind) === 0));
+      setPause(valid.some((x) => Number(x.kind) === 1));
+      const rows = valid.filter((x) => Number(x.kind) === 2).flatMap((x) => {
+        const t = resolveToken(x.token); const thr = num(x.threshold);
+        return thr ? [{ token: t?.address ?? "", threshold: String(thr), decimals: t?.decimals ?? 18, symbol: t?.symbol ?? (x.token ?? "") }] : [];
+      });
+      if (rows.length) setOutflows(rows);
+      const custom = valid.find((x) => Number(x.kind) === 3 && x.signature?.trim()); if (custom) setCustomSig(custom.signature!.trim());
+      const call = valid.find((x) => Number(x.kind) === 4 && x.signature?.trim()); if (call) setCallSig(call.signature!.trim());
+    }
     const cover = num(d.coverAmount); if (cover) setCoverStr(String(cover));
-    const thr = num(d.threshold);
-    if (kinds.includes(2) && thr && outflows.length) setOutflows((os) => os.map((o, i) => (i === 0 ? { ...o, threshold: String(thr) } : o)));
     const wb = num(d.windowBlocks); if (wb) setEndStr((start + BigInt(Math.floor(wb))).toString());
   }
 

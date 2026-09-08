@@ -14,7 +14,10 @@ export interface AiStatus {
   listError: string | null;
 }
 
+export interface DraftPeril { kind: number; token?: string; threshold?: string; signature?: string }
 export interface PolicyDraft {
+  /** The bundle. Older replies used `kind`/`kinds` + one `threshold`; both shapes are accepted. */
+  perils?: DraftPeril[];
   kind?: number;
   kinds?: number[];
   threshold?: string;
