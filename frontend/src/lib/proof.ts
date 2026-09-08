@@ -1,5 +1,6 @@
 import { read } from "./chain";
 import { SIG } from "./triggers";
+import { resolveToken } from "./tokens";
 
 /**
  * Attestcoin proof material, exactly as the proof service returns it and as
@@ -84,6 +85,13 @@ export function describeVerified(v: Verified, sourceBlock: number | bigint, chai
     from: v.from, to: v.to, value: v.value,
     receiptStatus: v.receiptStatus,
     receiptStatusMeaning: v.receiptStatus === 1 ? "succeeded" : "REVERTED — matches nothing",
-    logs: v.logs,
+    // Give the model the amount in token units where the token is known, so it
+    // does not have to guess decimals from a raw integer.
+    logs: v.logs.map((l) => {
+      const t = resolveToken(l.emitter);
+      return l.value !== undefined && t?.symbol
+        ? { ...l, token: t.symbol, amount: `${(Number(l.value) / 10 ** t.decimals).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${t.symbol}` }
+        : l;
+    }),
   };
 }

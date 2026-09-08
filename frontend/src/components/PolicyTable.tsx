@@ -8,6 +8,7 @@ import type { PolicyView, Snapshot } from "../lib/useProtocol";
 import { AiAnalyst } from "./AiAnalyst";
 import { Icon } from "./Icons";
 import { blockLabel } from "../lib/source";
+import { resolveToken } from "../lib/tokens";
 
 type Act = (label: string, fn: () => Promise<{ hash: string; wait: () => Promise<unknown> }>) => Promise<void>;
 const ACTIVE = 1;
@@ -93,11 +94,18 @@ export function PolicyTable({ snap, actor, act, busy, aiEnabled }: { snap: Snaps
   );
 }
 
-/** Raw token amount → human, using the incident's decimals when we know them. */
-function fmtValue(raw: string, inc?: Incident): string {
-  const dec = inc?.decimals ?? 18;
+/**
+ * Raw token amount → human. Decimals come from the emitting token when it is one
+ * we know (USDC is 6, not 18 — an earlier version printed 21.8M USDC as "0"),
+ * else from the incident preset, else the raw integer with its unit stated.
+ */
+function fmtValue(raw: string, emitter: string, inc?: Incident): string {
+  const known = resolveToken(emitter);
+  const dec = known?.symbol ? known.decimals : inc?.decimals;
+  const symbol = known?.symbol || inc?.token;
+  if (dec === undefined) return `${BigInt(raw).toLocaleString()} raw units`;
   const n = Number(raw) / 10 ** dec;
-  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${inc?.token ?? `(${dec}dp)`}`;
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${symbol ?? ""}`.trim();
 }
 
 /**
@@ -178,7 +186,7 @@ function ProofPanel({ policy, snap, actor, act, busy, aiEnabled }: { policy: Pol
                     <td><code>{l.event}</code></td>
                     <td className="mono">{short(l.emitter)}</td>
                     <td className="mono muted">
-                      {l.from ? <>from {short(String(l.from))} → {short(String(l.to))} · {fmtValue(String(l.value), inc)}</> : l.newImplementation ? `→ ${short(String(l.newImplementation))}` : ""}
+                      {l.from ? <>from {short(String(l.from))} → {short(String(l.to))} · {fmtValue(String(l.value), l.emitter, inc)}</> : l.newImplementation ? `→ ${short(String(l.newImplementation))}` : ""}
                     </td>
                   </tr>
                 ))}
