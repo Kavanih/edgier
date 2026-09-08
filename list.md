@@ -9,6 +9,8 @@ House rules on this deployment: cover per contract ≤ ~29,000 mUSD (10 % of the
 thresholds are in the token's own units — get the **decimals** right (USDT/USDC = 6, WBTC = 8, most others 18).
 Every 🔎 card below was verified today against the mainnet receipt: the transaction succeeded and contains a single `Transfer`
 **from the insured address** at least as large as the threshold. Video script per page: `contracts/docs/DEMO.md`.
+KuCoin, Balancer, Cream and Wintermute were additionally run through the live BlockProver precompile today: `verify` returned true for all four.
+The **first** proof fetch for a block the prover has not seen can take a minute or two (KuCoin's 2020 block did); the retry is seconds. Fetch each card's proof once off camera.
 
 **Already used** (don't re-record): Ronin 2022, Euler, Harmony Horizon, Poly Network, Nomad — settled as policies #1–#5, plus the
 Ronin bundle tests #6/#7 (`CALL_SELECTOR` and `CUSTOM_EVENT`); Orbit Bridge — settled from the hosted app on 2026-09-08.

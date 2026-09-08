@@ -126,7 +126,7 @@ your payout."
 
 ## If something goes wrong on camera
 
-- Proof fetch slow → say "the prover is building a Merkle proof against the attested header" and wait; it is real work.
+- Proof fetch slow → say "the prover is building a Merkle proof against the attested header" and wait; it is real work. The first fetch for an old block can take over a minute; that is why you fetch each proof once off camera first.
 - Toast stuck on *pending* → the tx is on Blockscout already; reload and continue.
 - AI offline → skip step 3's draft and step 4's analysis; nothing else depends on them.
 - Wrong decimals → the app refuses with *TriggerNotMet* at claim time. That is a feature; say so.
