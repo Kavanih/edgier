@@ -1,0 +1,17 @@
+[Unit]
+Description=Edgier AI sidecar (OpenRouter proxy, proof fetch, source-chain block lookup)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/edgier/backend
+ExecStart=/opt/edgier/backend/node_modules/.bin/tsx server/ai.ts
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+StandardOutput=append:/var/log/edgier/ai.log
+StandardError=append:/var/log/edgier/ai.log
+
+[Install]
+WantedBy=multi-user.target

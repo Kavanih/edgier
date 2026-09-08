@@ -1,0 +1,17 @@
+[Unit]
+Description=Edgier watcher (scans the source chain for losses on active policies and submits proofs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/edgier/backend
+ExecStart=/opt/edgier/backend/node_modules/.bin/tsx watcher/index.ts
+Restart=always
+RestartSec=15
+Environment=NODE_ENV=production
+StandardOutput=append:/var/log/edgier/watcher.log
+StandardError=append:/var/log/edgier/watcher.log
+
+[Install]
+WantedBy=multi-user.target

@@ -358,6 +358,10 @@ Or individually: `npm run ai` / `npm run watch` in `backend/`; `npm run dev` in 
 `npm run deploy:creditcoin`, `npm run settle:mainnet`, `npm run verify:bundle`, `npm run preflight`,
 `npm run verify:live` in `contracts/`.
 
+**Hosted:** the frontend is a static Vite build on Vercel (`frontend/vercel.json` rewrites
+`/api/*` to the sidecar), the sidecar and watcher run as systemd services on a VPS —
+see `backend/deploy/README.md`.
+
 ## Glossary
 
 - **Premium** — the price of cover: what the buyer pays the pool, up front, for a policy of a

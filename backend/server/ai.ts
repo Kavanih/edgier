@@ -23,6 +23,9 @@ dotenv.config({ path: resolve(__dirname, "../../.env") });
  */
 
 const PORT = Number(process.env.AI_PORT ?? 8787);
+// 127.0.0.1 in development (Vite proxies /api). Set AI_HOST=0.0.0.0 on a server
+// that a hosted frontend reaches through a rewrite.
+const HOST = process.env.AI_HOST ?? "127.0.0.1";
 const KEY = process.env.OPENROUTER_API_KEY;
 /** Leave headroom under OpenRouter's 1,000/day free allowance. */
 const DAILY_CAP = Number(process.env.OPENROUTER_DAILY_CAP ?? 900);
@@ -346,7 +349,7 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`[ai] listening on http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[ai] listening on http://${HOST}:${PORT}`);
   console.log(`[ai] key ${KEY ? "present" : "MISSING — set OPENROUTER_API_KEY in .env"}; free models only; cap ${DAILY_CAP}/day`);
 });
